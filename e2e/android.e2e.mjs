@@ -16,6 +16,7 @@ const shot = name => device.screenshot({ path: path.join(ARTIFACTS, `android-${n
 const resumed = async () => (await sh("dumpsys activity activities")).split("\n").filter(l => /ResumedActivity/.test(l)).join(" ");
 const appInFront = async () => (await resumed()).includes(PKG);
 const back = async () => { await sh("input keyevent KEYCODE_BACK"); await sleep(700); };
+const keyboardShown = async () => /mInputShown=true|isInputViewShown=true/.test(await sh("dumpsys input_method"));
 const pid = async () => (await sh(`pidof ${PKG}`)).trim();
 const appFile = async rel => sh(`run-as ${PKG} cat files/${rel}`).catch(() => "");
 const appLs = async rel => sh(`run-as ${PKG} ls files/${rel}`).catch(() => "");
@@ -74,8 +75,13 @@ const backups = await appLs("backups");
 check(/nimbus-\d{4}-\d{2}-\d{2}\.json/.test(backups), "today's automatic backup exists", backups.trim());
 
 section("Hardware back key inside the app");
-await page.click("#btnIn"); await sleep(400);
+await page.click("#btnIn"); await sleep(1200);
 check(await page.isVisible("#scrim"), "Cash In panel open");
+if (await keyboardShown()) {
+  // Android: with the keyboard up, the first back press only hides the keyboard
+  await back();
+  check(!(await keyboardShown()) && await page.isVisible("#scrim") && await appInFront(), "first back hides the keyboard, the panel stays open");
+}
 await back();
 check(!(await page.isVisible("#scrim")) && await appInFront(), "back closes the panel and keeps the app open");
 await page.click("#openSettings"); await sleep(300);
