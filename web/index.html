@@ -3,13 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="description" content="Nimbus Book: a simple business cash book. Track cash in and out, pick expenses from a product list, and save it all to your Google Drive.">
+<meta name="description" content="Nimbus Book: a simple business cash book. Track cash in and out, pick expenses from a product list. Works fully offline.">
 <meta name="theme-color" content="#3559d6">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M9.5 25h14a6 6 0 0 0 .9-11.93A8 8 0 0 0 9 12.2 6.5 6.5 0 0 0 9.5 25Z' fill='%233559d6'/%3E%3C/svg%3E">
 <title>Nimbus Book</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Hanken+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<link rel="stylesheet" href="fonts/fonts.css">
 <style>
 /* Layout: one phone-width app column (max 520px) — sticky book header, entry ledger, fixed Cash In / Cash Out bar, bottom sheets for forms. */
 :root{
@@ -218,8 +216,6 @@ button{cursor:pointer}
 </div>
 <div id="layer"></div>
 
-<script src="config.js"></script>
-<script src="https://accounts.google.com/gsi/client" async defer></script>
 <script>
 /* ---------- Product catalog (prices are typical Indian market rates in ₹; editable per entry) ---------- */
 const CATALOG = [
@@ -271,124 +267,38 @@ function normalize(s){
   if(!s.books.find(b=>b.id===s.activeId)) s.activeId=s.books[0].id;
   return s;
 }
-/* ---------- accounts & storage ----------
-   Sign in with Google (Google Identity Services token flow). Each user's books live in one JSON file
-   in the hidden app folder of their own Google Drive (drive.appdata scope), with a copy cached on the device. */
-const CLIENT_ID=(window.NIMBUS_CONFIG&&window.NIMBUS_CONFIG.googleClientId)||"";
-const DRIVE_SCOPE="https://www.googleapis.com/auth/drive.appdata";
-const SCOPES="openid email profile "+DRIVE_SCOPE;
-const DRIVE_FILE="nimbus-book.json";
+/* ---------- storage (fully offline: everything stays on this phone) ---------- */
+const DATA_KEY="nimbus-data";
 const store={
   get(k){try{const v=localStorage.getItem(k);return v?JSON.parse(v):null}catch(e){return null}},
-  set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}},
-  del(k){try{localStorage.removeItem(k)}catch(e){}}
+  set(k,v){try{localStorage.setItem(k,JSON.stringify(v));return true}catch(e){return false}}
 };
-let session=store.get("nimbus-session");          // {sub,email,name,picture} or {guest:true}
-let token=store.get("nimbus-token");              // {access,exp}
-let driveFileId=null, syncState="local", saveTimer=null, pushing=null, tokenClient=null;
-const signedIn=()=>!!(session&&session.sub);
-const dataKey=()=>signedIn()?"nimbus-data-"+session.sub:"nimbus-data-guest";
-const pendKey=()=>"nimbus-pending-"+(session&&session.sub);
-let pending=signedIn()&&!!store.get(pendKey());
-function blankState(){const b=blankBook("My Book");return {v:1,activeId:b.id,custom:[],books:[b],updatedAt:0}}
-function hasRealData(s){return !!s&&(s.custom.length>0||s.books.some(b=>!b.sample&&b.entries.length))}
-let state=normalize(store.get(dataKey()))||(signedIn()?blankState():sampleState());
-
-function persistLocal(){store.set(dataKey(),state)}
+let state=normalize(store.get(DATA_KEY))||sampleState();
 function commit(){
-  state.updatedAt=Date.now(); persistLocal(); render();
-  if(!signedIn()) return;
-  pending=true; store.set(pendKey(),true);
-  clearTimeout(saveTimer); saveTimer=setTimeout(push,1200);
+  state.updatedAt=Date.now();
+  if(!store.set(DATA_KEY,state)) toast("Couldn't save. Your phone may be out of storage.");
+  render();
 }
-const tokenValid=()=>!!(token&&token.access&&token.exp>Date.now());
-async function gfetch(url,opts={}){
-  const res=await fetch(url,{...opts,headers:{...(opts.headers||{}),Authorization:"Bearer "+token.access}});
-  if(!res.ok){const err=new Error("Google API "+res.status);err.status=res.status;throw err}
-  return res;
-}
-async function findFile(){
-  const q=encodeURIComponent("name='"+DRIVE_FILE+"' and trashed=false");
-  const r=await (await gfetch("https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&fields=files(id,modifiedTime)&q="+q)).json();
-  return r.files&&r.files[0]?r.files[0].id:null;
-}
-async function createFile(body){
-  const boundary="nimbus"+uid();
-  const meta=JSON.stringify({name:DRIVE_FILE,parents:["appDataFolder"],mimeType:"application/json"});
-  const multipart=`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${body}\r\n--${boundary}--`;
-  const r=await (await gfetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id",{method:"POST",headers:{"Content-Type":"multipart/related; boundary="+boundary},body:multipart})).json();
-  return r.id;
-}
-function failSync(e){setSync(e&&e.status===401?"reconnect":navigator.onLine===false?"offline":"error");if(e&&e.status===401){token=null;store.del("nimbus-token")}}
-async function push(){
-  if(pushing){await pushing}
-  if(!signedIn()||!pending) return;
-  if(!tokenValid()) return setSync("reconnect");
-  pushing=(async()=>{
-    const version=state.updatedAt, body=JSON.stringify(state);
-    setSync("syncing");
-    try{
-      if(!driveFileId) driveFileId=await findFile();
-      if(driveFileId) await gfetch(`https://www.googleapis.com/upload/drive/v3/files/${driveFileId}?uploadType=media`,{method:"PATCH",headers:{"Content-Type":"application/json"},body});
-      else driveFileId=await createFile(body);
-      if(state.updatedAt===version){pending=false;store.del(pendKey());setSync("synced")}
-      else {clearTimeout(saveTimer);saveTimer=setTimeout(push,400)}
-    }catch(e){failSync(e)}
-  })();
-  await pushing; pushing=null;
-}
-async function pull(){
-  if(!signedIn()) return;
-  if(!tokenValid()) return setSync("reconnect");
-  setSync("syncing");
-  try{
-    if(!driveFileId) driveFileId=await findFile();
-    if(driveFileId){
-      const remote=normalize(await (await gfetch(`https://www.googleapis.com/drive/v3/files/${driveFileId}?alt=media`)).json());
-      // Drive wins unless this device has newer changes that haven't been uploaded yet
-      if(remote&&(!pending||(remote.updatedAt||0)>(state.updatedAt||0))){state=remote;pending=false;store.del(pendKey());persistLocal();render()}
-    } else pending=true;                       // first sign-in: create the Drive file from this device's books
-    if(pending) await push(); else setSync("synced");
-  }catch(e){failSync(e)}
-}
-function setSync(s){syncState=s;renderSync()}
 
-function gisReady(){return !!(window.google&&google.accounts&&google.accounts.oauth2)}
-function signInWithGoogle(){
-  if(!CLIENT_ID){toast("Google sign-in isn't set up yet. Add the Google Client ID in Vercel.");return}
-  if(!gisReady()){toast("Google sign-in is still loading. Try again in a moment.");return}
-  if(!tokenClient) tokenClient=google.accounts.oauth2.initTokenClient({
-    client_id:CLIENT_ID, scope:SCOPES, callback:onToken,
-    error_callback:e=>toast(e&&e.type==="popup_closed"?"Sign-in was closed before it finished":"Google sign-in couldn't open. Allow pop-ups for this site and try again.")
-  });
-  tokenClient.requestAccessToken(signedIn()?{prompt:"",login_hint:session.email}:{prompt:"select_account"});
-}
-async function onToken(r){
-  if(!r||r.error){toast("Google sign-in didn't finish. Try again.");return}
-  if(!google.accounts.oauth2.hasGrantedAllScopes(r,DRIVE_SCOPE)){toast("Nimbus Book needs Google Drive access to save your books. Sign in again and allow Drive.");return}
-  token={access:r.access_token,exp:Date.now()+(Number(r.expires_in||3600)-60)*1000}; store.set("nimbus-token",token);
-  if(!signedIn()){
-    let me;
-    try{me=await (await gfetch("https://www.googleapis.com/oauth2/v3/userinfo")).json()}catch(e){toast("Couldn't read your Google profile. Try again.");return}
-    const guestState=state, wasGuest=!!(session&&session.guest);
-    session={sub:me.sub,email:me.email||"",name:me.name||me.email||"You",picture:me.picture||""}; store.set("nimbus-session",session);
-    const local=normalize(store.get(dataKey()));
-    state=local||(wasGuest&&hasRealData(guestState)?guestState:blankState());
-    if(!local&&state===guestState){pending=true;store.set(pendKey(),true);persistLocal()}
-    else pending=!!store.get(pendKey());
-    driveFileId=null; showApp(); toast("Signed in as "+(session.email||session.name));
+/* ---------- native (Android app via Capacitor); falls back to the browser ---------- */
+const Cap=window.Capacitor;
+const isNative=!!(Cap&&Cap.isNativePlatform&&Cap.isNativePlatform());
+const plugins={};
+const plug=n=>isNative&&Cap.registerPlugin?(plugins[n]||(plugins[n]=Cap.registerPlugin(n))):null;
+async function saveFile(name,text,mime){
+  if(isNative){
+    const w=await plug("Filesystem").writeFile({path:name,data:text,directory:"CACHE",encoding:"utf8"});
+    try{await plug("Share").share({title:name,url:w.uri,dialogTitle:"Save or send "+name})}
+    catch(e){if(!/cancel/i.test(String(e&&e.message)))throw e}
+    return;
   }
-  await pull();
+  const url=URL.createObjectURL(new Blob([text],{type:mime}));
+  const a=document.createElement("a");a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),2000);
 }
-function continueAsGuest(){session={guest:true};store.set("nimbus-session",session);state=normalize(store.get(dataKey()))||sampleState();showApp()}
-function signOut(){
-  if(signedIn()) store.del(dataKey()), store.del(pendKey());
-  store.del("nimbus-token"); store.del("nimbus-session");
-  session=null; token=null; driveFileId=null; pending=false; syncState="local";
-  state=sampleState(); closeSheet(); showLogin();
+if(isNative){
+  try{plug("App").addListener("backButton",()=>{if($("#scrim"))closeSheet();else if(ui.tab!=="entries"){ui.tab="entries";render()}else plug("App").exitApp()})}catch(e){}
 }
-document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&signedIn()&&!pending&&tokenValid())pull()});
-window.addEventListener("online",()=>{if(signedIn()&&pending)push()});
 
 /* ---------- derived ---------- */
 const book=()=>state.books.find(b=>b.id===state.activeId)||state.books[0];
@@ -406,70 +316,15 @@ function filtered(b){
 
 /* ---------- render ---------- */
 const CLOUD_SVG=`<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M9.5 25h14a6 6 0 0 0 .9-11.93A8 8 0 0 0 9 12.2 6.5 6.5 0 0 0 9.5 25Z" fill="var(--accent)"/><path d="M12 19.5h8M12 16h5" stroke="var(--accent-ink)" stroke-width="2" stroke-linecap="round"/></svg>`;
-const G_LOGO=`<svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>`;
-function renderSync(){
-  const el=$("#sync");if(!el)return;
-  const M={local:["","Saved on this device only"],syncing:["busy","Saving to Google Drive…"],synced:["cloud","Saved to Google Drive"],
-    reconnect:["warn","Reconnect Google Drive"],offline:["warn","Offline · syncs when back"],error:["warn","Couldn't reach Drive · retry"]};
-  const s=signedIn()?syncState:"local",[c,t]=M[s]||M.local;
-  el.className="sync "+c;
-  el.innerHTML=(s==="reconnect"||s==="error")?`<button type="button" id="syncAction"><i></i>${t}</button>`:`<i></i>${t}`;
-}
-function acctButton(){
-  if(signedIn()&&session.picture) return `<button type="button" class="avatar" id="openAccount" aria-label="Account"><img src="${esc(session.picture)}" alt="" referrerpolicy="no-referrer"></button>`;
-  if(signedIn()) return `<button type="button" class="avatar" id="openAccount" aria-label="Account">${esc((session.name||"?")[0].toUpperCase())}</button>`;
-  return `<button type="button" class="avatar" id="openAccount" aria-label="Account"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg></button>`;
-}
-function showLogin(){
-  $("#actionbar").hidden=true; closeSheet();
-  $("#app").innerHTML=`<main class="login">
-    <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><path d="M9.5 25h14a6 6 0 0 0 .9-11.93A8 8 0 0 0 9 12.2 6.5 6.5 0 0 0 9.5 25Z" fill="var(--accent)"/><path d="M12 19.5h8M12 16h5" stroke="var(--accent-ink)" stroke-width="2" stroke-linecap="round"/></svg>
-    <h1>Nimbus Book</h1>
-    <p class="lede">Your business cash book. Record every rupee in and out, pick expenses from a ready product list, and keep it all in your own Google Drive.</p>
-    <ul class="points">
-      <li><span class="dot in"></span><span><b>Cash In and Cash Out</b> in two taps, with a running balance</span></li>
-      <li><span class="dot"></span><span><b>${CATALOG.length} ready products</b> for expenses, plus your own custom items</span></li>
-      <li><span class="dot out"></span><span><b>Saved to your Google Drive</b>, on every phone and computer you sign in on</span></li>
-    </ul>
-    <div class="auth">
-      <button type="button" class="gbtn" id="googleBtn" ${CLIENT_ID?"":"disabled"}>${G_LOGO}Continue with Google</button>
-      <p class="fine">${CLIENT_ID?"New here? This creates your account. Already have one? This logs you in.":"Google sign-in is being set up. You can try the app without an account for now."}</p>
-      <div class="or">or</div>
-      <button type="button" class="btn ghost" id="guestBtn">Try without an account</button>
-    </div>
-    <p class="fine">Your books go in a private Nimbus Book folder in your Google Drive. Only you can see them, and only this app can open that folder.</p>
-  </main>`;
-}
-function showApp(){closeSheet();$("#actionbar").hidden=false;render()}
-let acctUi={confirm:false};
-function openAccount(){
-  let h=`<header><h2>Account</h2><button class="x" type="button" data-close aria-label="Close">×</button></header><div class="body">`;
-  if(signedIn()){
-    h+=`<div class="who">${acctButton().replace('id="openAccount"','tabindex="-1"')}<div style="min-width:0"><b>${esc(session.name)}</b><span class="hint" style="display:block;overflow-wrap:anywhere">${esc(session.email)}</span></div></div>
-      <div class="detail-items"><div><span class="hint">Storage</span><span>Google Drive</span></div><div><span class="hint">Status</span><span class="sync" id="sync"></span></div></div>
-      <span class="hint">Your books are saved as one file in a hidden Nimbus Book folder in your Google Drive. To remove it, open Google Drive → Settings → Manage apps → Nimbus Book → Delete hidden app data.</span>
-      <div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn ghost sm" id="acctSync">${tokenValid()?"Sync now":"Reconnect Google Drive"}</button><button type="button" class="btn danger sm" id="signOutBtn">Sign out</button></div>`;
-    if(acctUi.confirm) h+=`<div class="confirm"><span>Some changes haven't reached Google Drive yet. If you sign out now, they're deleted from this device.</span><div class="r"><button type="button" class="btn danger sm" id="signOutYes">Sign out anyway</button><button type="button" class="btn ghost sm" id="signOutNo">Stay signed in</button></div></div>`;
-  } else {
-    h+=`<span class="hint">You're using Nimbus Book without an account. Your books are saved only in this browser. If you clear your browser data, they're gone.</span>
-      <button type="button" class="gbtn" id="acctGoogle" ${CLIENT_ID?"":"disabled"}>${G_LOGO}Continue with Google</button>
-      <span class="hint">${CLIENT_ID?"Signing in for the first time creates your account and moves the books on this device into it.":"Google sign-in is being set up."}</span>
-      <button type="button" class="btn ghost sm" id="leaveGuest">Back to the sign-in screen</button>`;
-  }
-  h+=`</div>`;openSheet(h);renderSync();
-}
-function boot(){
-  if(!session) return showLogin();
-  showApp();
-  if(signedIn()){if(tokenValid())pull();else setSync("reconnect")}
-}
+function renderSync(){const el=$("#sync");if(el){el.className="sync cloud";el.innerHTML="<i></i>Saved on this phone"}}
+function boot(){render()}
 function render(){
   const b=book(), t=totals(b.entries), list=filtered(b).slice().sort((x,y)=>y.ts-x.ts);
   // running balance (chronological across the whole book)
   const run={};let acc=0;for(const e of b.entries.slice().sort((x,y)=>x.ts-y.ts)){acc+=e.type==="in"?e.amount:-e.amount;run[e.id]=acc}
   const pct=t.i+t.o?Math.round(t.i/(t.i+t.o)*100):50;
   let html=`<div class="top"><div class="brand">${CLOUD_SVG}Nimbus Book</div>
-    <button class="book-switch" id="openBooks" type="button" aria-label="Switch book"><span>${esc(b.name)}</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></button>${acctButton()}</div>`;
+    <button class="book-switch" id="openBooks" type="button" aria-label="Switch book"><span>${esc(b.name)}</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></button></div>`;
   if(b.sample) html+=`<div class="sample"><span><b>This is a sample book.</b> The figures are examples. Add your own book from the book menu.</span><button type="button" id="clearSample">Clear sample</button></div>`;
   html+=`<section class="balance" aria-label="Balance">
     <div class="row"><span class="label">Net balance</span><span class="sync" id="sync"></span></div>
@@ -519,7 +374,11 @@ function reports(b){
   <div class="rep"><h3>Money in by source</h3>${bars(ins,"inb")}</div>
   <div class="rep"><h3>Top products bought</h3>${top.length?top.map(([n,p])=>`<div class="bar"><span>${esc(n)} <span class="hint">· ${+p.q.toFixed(2)} ${esc(p.unit)}</span></span><span class="num">${money(p.amt)}</span></div>`).join(""):`<span class="hint">Products you pick in Cash Out show up here.</span>`}</div>
   <div class="rep"><h3>Export</h3><span class="hint">${b.entries.length} entries · net ${t.net<0?"−":""}${money(Math.abs(t.net))}. The CSV opens in Excel and Google Sheets.</span>
-    <div class="actions"><button type="button" class="btn primary sm" id="exportCsv">Download CSV</button><button type="button" class="btn ghost sm" id="copyCsv">Copy as CSV</button></div></div>`;
+    <div class="actions"><button type="button" class="btn primary sm" id="exportCsv">Download CSV</button><button type="button" class="btn ghost sm" id="copyCsv">Copy as CSV</button></div></div>
+  <div class="rep"><h3>Backup &amp; restore</h3><span class="hint">Nimbus Book keeps everything on this phone, with no internet needed. Make a backup now and then, and keep the file somewhere safe. You'll need it if you change phones or uninstall the app.</span>
+    <div class="actions"><button type="button" class="btn primary sm" id="backupBtn">Back up all books</button><button type="button" class="btn ghost sm" id="restoreBtn">Restore from backup</button></div>
+    <input type="file" id="restoreFile" accept="application/json,.json" hidden>
+    ${pendingRestore?`<div class="confirm"><span>Replace everything on this phone with the backup (${pendingRestore.books.length} book${pendingRestore.books.length>1?"s":""}, ${pendingRestore.books.reduce((n,b)=>n+b.entries.length,0)} entries)? Your current books will be overwritten.</span><div class="r"><button type="button" class="btn danger sm" id="restoreYes">Restore backup</button><button type="button" class="btn ghost sm" id="restoreNo">Cancel</button></div></div>`:""}</div>`;
 }
 
 /* ---------- toast ---------- */
@@ -654,19 +513,20 @@ function csv(){
   return rows.map(r=>r.map(v=>{v=String(v??"");return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v}).join(",")).join("\n");
 }
 
+/* ---------- restore ---------- */
+let pendingRestore=null;
+document.addEventListener("change",async ev=>{
+  if(ev.target.id!=="restoreFile")return;
+  const f=ev.target.files&&ev.target.files[0];if(!f)return;
+  try{const j=JSON.parse(await f.text());const d=normalize(j&&j.data?j.data:j);if(!d)throw 0;pendingRestore=d;ui.tab="reports";render()}
+  catch(e){toast("That file isn't a Nimbus Book backup.")}
+});
+
 /* ---------- events ---------- */
 document.addEventListener("click",async ev=>{
   const t=ev.target.closest("button,[data-close],#scrim");if(!t)return;
   if(t.id==="scrim"&&ev.target===t){closeSheet();return}
   if(t.hasAttribute("data-close")){closeSheet();return}
-  if(t.id==="googleBtn"||t.id==="acctGoogle")return signInWithGoogle();
-  if(t.id==="guestBtn")return continueAsGuest();
-  if(t.id==="openAccount"){acctUi.confirm=false;return openAccount()}
-  if(t.id==="syncAction"||t.id==="acctSync"){if(!tokenValid())return signInWithGoogle();await pull();if($("#acctSync"))openAccount();return}
-  if(t.id==="signOutBtn"){if(pending){acctUi.confirm=true;return openAccount()}return signOut()}
-  if(t.id==="signOutYes")return signOut();
-  if(t.id==="signOutNo"){acctUi.confirm=false;return openAccount()}
-  if(t.id==="leaveGuest"){store.del("nimbus-session");session=null;showLogin();return}
   if(t.id==="btnIn")return openEntry("in");
   if(t.id==="btnOut")return openEntry("out");
   if(t.id==="openBooks"){booksUi={adding:false,renaming:null,confirmDel:null};return openBooks()}
@@ -676,10 +536,17 @@ document.addEventListener("click",async ev=>{
   if(t.dataset.entry)return openDetail(t.dataset.entry);
   if(t.id==="editEntry"){const e=book().entries.find(x=>x.id===t.dataset.id);return openEntry(e.type,e)}
   if(t.id==="exportCsv"){
-    const name=book().name.replace(/[^\w\- ]+/g,"").trim()||"nimbus-book";
-    try{const url=URL.createObjectURL(new Blob(["\ufeff"+csv()],{type:"text/csv;charset=utf-8"}));const a=document.createElement("a");a.href=url;a.download=name+".csv";document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);toast("CSV downloaded")}catch(e){toast("Couldn't download. Use Copy as CSV.")}
+    const name=(book().name.replace(/[^\w\- ]+/g,"").trim()||"nimbus-book")+".csv";
+    try{await saveFile(name,"\ufeff"+csv(),"text/csv;charset=utf-8");toast(isNative?"CSV ready to save or share":"CSV downloaded")}catch(e){toast("Couldn't export. Try Copy as CSV.")}
     return}
   if(t.id==="copyCsv"){try{await navigator.clipboard.writeText(csv());toast("CSV copied")}catch(e){toast("Copy isn't allowed here")}return}
+  if(t.id==="backupBtn"){
+    const d=new Date(),name=`nimbus-book-backup-${dayKey(d.getTime())}.json`;
+    try{await saveFile(name,JSON.stringify({app:"nimbus-book",version:1,exportedAt:d.toISOString(),data:state}),"application/json");toast(isNative?"Backup ready. Save it to Drive or send it to yourself.":"Backup downloaded")}catch(e){toast("Couldn't create the backup.")}
+    return}
+  if(t.id==="restoreBtn"){$("#restoreFile").click();return}
+  if(t.id==="restoreYes"){state=pendingRestore;pendingRestore=null;commit();toast("Backup restored");return}
+  if(t.id==="restoreNo"){pendingRestore=null;render();return}
   // entry sheet
   if(draft&&$("#amt")){
     if(t.dataset.mode){readDraftFields();draft.mode=t.dataset.mode;return drawEntry()}

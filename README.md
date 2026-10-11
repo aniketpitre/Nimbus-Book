@@ -1,34 +1,46 @@
 # Nimbus Book
 
-A CashBook-style business cash book: books, Cash In / Cash Out, a ready product list for expenses with a custom-item button, filters, reports and CSV export. Users sign in with Google, and each user's data is saved to their own Google Drive.
+A simple business cash book for Android that works **fully offline**. All data stays on the phone.
 
-## How it works
+- **Books:** keep one per shop, project or person; each has its own net balance, total in and total out.
+- **Cash In / Cash Out:** each entry has an amount, date and time, payment mode (Cash, UPI, Card, Bank, Cheque), category, remark and party.
+- **Product list for expenses:** 70 common items in 9 categories (Kirana, Tea & Snacks, Office, Travel, Bills, Staff, Cleaning, Packaging, Repairs) with typical ₹ prices. Tap to add an item, set its quantity and price, and the amount and remark fill in automatically.
+- **+ Custom button:** add any item that isn't listed, and optionally save it to *My products*.
+- **Search and filters:** by date, in/out and payment mode. Each entry shows its running balance.
+- **Reports:** spending by category, money in by source, top products bought, and CSV export (Excel / Google Sheets).
+- **Backup & restore:** save every book to one `.json` file, then restore it on a new phone.
 
-- **Sign up / log in:** "Continue with Google" (Google Identity Services). The first sign-in creates the account, and later sign-ins log in.
-- **Database:** each user's books are one JSON file (`nimbus-book.json`) in the hidden *app data* folder of **their own Google Drive** (`drive.appdata` scope). Only this app can read that folder. A copy is cached in the browser so the app opens instantly and works offline, then syncs.
-- **Guest mode:** "Try without an account" keeps data in the browser only. Signing in later moves those books into the account.
-- No server and no database to run: it's a static site on Vercel.
+## Install on your phone
 
-## Files
+Open the latest release: **https://github.com/aniketpitre/nimbus-book/releases/latest**. Download the `NimbusBook-x.y.z.apk` file and open it. If Android asks, allow your browser or Files app to install unknown apps.
 
-- `index.html` is the whole app (HTML + CSS + JS).
-- `build.mjs` is the Vercel build: it copies the app to `dist/` and writes `dist/config.js` from the `GOOGLE_CLIENT_ID` env var.
-- `vercel.json` holds the build settings and headers (`Cross-Origin-Opener-Policy: same-origin-allow-popups`, which the Google sign-in popup needs).
+## How it's built
 
-## One-time Google setup
+| Path | What it is |
+|---|---|
+| `web/index.html` | The whole app (HTML, CSS, JS), no frameworks |
+| `web/fonts/` | Bundled fonts so it looks the same offline (SIL OFL) |
+| `build.mjs` | Copies `web/` to `www/` |
+| `capacitor.config.json`, `android/` | [Capacitor 7](https://capacitorjs.com) wraps the web app as a native Android app. Plugins: App (back button), Filesystem and Share (export and backup files) |
+| `.github/workflows/android-release.yml` | Builds the APK on GitHub. Pushing a `v*` tag publishes a GitHub Release with the APK attached |
 
-1. Go to https://console.cloud.google.com and create a project (e.g. "Nimbus Book").
-2. In **APIs & Services → Library**, enable the **Google Drive API**.
-3. Open **Google Auth Platform**:
-   - **Branding:** set the app name, support email and developer email.
-   - **Audience:** choose External. While the app is in *Testing*, add your Gmail (and any testers) under **Test users**.
-   - **Data access:** add the scopes `openid`, `.../auth/userinfo.email`, `.../auth/userinfo.profile` and `.../auth/drive.appdata`.
-   - **Clients → Create client → Web application:** under *Authorized JavaScript origins*, add the site URL (e.g. `https://nimbus-book.vercel.app`, plus `http://localhost:3000` for local testing). No redirect URI is needed.
-4. Copy the **Client ID** (`….apps.googleusercontent.com`). In Vercel, open the project's **Settings → Environment Variables**, add `GOOGLE_CLIENT_ID` = that value, then redeploy.
+Data is saved in the app's local storage on the device. Uninstalling the app deletes it, so make a backup first.
 
-## Run locally
+## Make a new release
+
+1. Bump `versionCode` (+1) and `versionName` in `android/app/build.gradle`.
+2. Commit, then tag and push: `git tag v1.0.1 && git push origin v1.0.1`.
+3. GitHub Actions builds `NimbusBook-1.0.1.apk` and attaches it to the release.
+
+## Develop
 
 ```sh
-GOOGLE_CLIENT_ID=xxxx.apps.googleusercontent.com node build.mjs
-npx serve dist -l 3000
+npm install
+npm run serve      # try it in a browser at http://localhost:3000
+npm run sync       # copy the web app into the Android project
+npx cap open android   # open in Android Studio
 ```
+
+## Signing
+
+APKs are signed with `android/app/nimbus-test.keystore`, a **test key committed on purpose**. That way each new release installs as an update over the last one and keeps your data. Before publishing on the Play Store, create a private key, keep it out of git, and put it in GitHub secrets.

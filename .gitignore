@@ -1,3 +1,4 @@
-dist/
 node_modules/
-.vercel/
+www/
+*.apk
+.DS_Store

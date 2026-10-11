@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Nimbus Book</string>
+    <string name="title_activity_main">Nimbus Book</string>
+    <string name="package_name">tech.aniketpitre.nimbusbook</string>
+    <string name="custom_url_scheme">tech.aniketpitre.nimbusbook</string>
+</resources>

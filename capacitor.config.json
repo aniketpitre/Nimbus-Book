@@ -1,0 +1,8 @@
+{
+  "appId": "tech.aniketpitre.nimbusbook",
+  "appName": "Nimbus Book",
+  "webDir": "www",
+  "android": {
+    "adjustMarginsForEdgeToEdge": "force"
+  }
+}

@@ -1,7 +1,5 @@
-// Vercel build: copy the app into dist/ and write config.js from the GOOGLE_CLIENT_ID env var.
-import { mkdirSync, copyFileSync, writeFileSync } from "node:fs";
-mkdirSync("dist", { recursive: true });
-copyFileSync("index.html", "dist/index.html");
-const googleClientId = process.env.GOOGLE_CLIENT_ID || "";
-writeFileSync("dist/config.js", `window.NIMBUS_CONFIG=${JSON.stringify({ googleClientId })};\n`);
-console.log(googleClientId ? "Google sign-in enabled" : "GOOGLE_CLIENT_ID not set: Google sign-in disabled");
+// Copies the web app (web/) into www/, the folder Capacitor packages into the Android app.
+import { cpSync, rmSync } from "node:fs";
+rmSync("www", { recursive: true, force: true });
+cpSync("web", "www", { recursive: true });
+console.log("Built www/");
