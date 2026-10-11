@@ -102,6 +102,7 @@ check(/"amount":90/.test(await appFile("nimbus-data.json")), "going to the home 
 page = await launch();
 check(rupees(await t(page, ".balance .net")) === 2500, "data is still there after the app is force-stopped", await t(page, ".balance .net"));
 await page.evaluate(() => localStorage.removeItem("nimbus-data"));
+await sleep(2500);   // let the WebView flush the wipe to disk before the restart
 page = await launch();
 await sleep(800);
 check(rupees(await t(page, ".balance .net")) === 2500 && !(await page.isVisible("#setupForm")), "if web storage is wiped, data is restored from the file");
