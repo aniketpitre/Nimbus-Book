@@ -253,7 +253,7 @@ const timeLabel = ts=>new Date(ts).toLocaleTimeString("en-IN",{hour:"numeric",mi
 const toLocalInput = ts=>{const d=new Date(ts);d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().slice(0,16)};
 
 /* ---------- state ---------- */
-const APP_VERSION="1.2.0";
+const APP_VERSION="1.2.1";
 function blankBook(name){return {id:uid(),name,created:Date.now(),entries:[]}}
 // v1.0.0 shipped with a sample book; strip its example entries but keep anything the user added to it.
 const SAMPLE_SIGS=new Set(["Counter sales|4800","Tea ×6, Samosa ×6|210","Payment from Patil Traders|2500","Petrol ×10|1050","Salary Advance — Ramesh|2000","Counter sales|6200","A4 Paper Ream ×2, Printer Ink|880","Opening balance|10000"]);

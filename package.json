@@ -1,6 +1,6 @@
 {
   "name": "nimbus-book",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "private": true,
   "description": "Nimbus Book: an offline business cash book for Android.",
   "scripts": {
