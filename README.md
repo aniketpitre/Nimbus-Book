@@ -13,6 +13,10 @@ A simple business cash book for Android that works **fully offline**. All data s
 - **Backup & restore (Settings):** save everything to one `.json` file (share it to Drive, WhatsApp or email) and restore it on any phone. The app also keeps an automatic daily copy on the phone for the last 7 days.
 - **Settings:** business name, backups, and erase all data.
 
+## Brand
+
+The app uses the **Nimbus System** logo. `brand/nimbus-system-logo-original.png` is the original, and `brand/nimbus-system-logo.svg` is a clean vector redraw of it (same arc, sky, mouse and cable, clouds, *Nimbus* script and *SYSTEM* lettering, with the colours taken from the original). The letters are converted to outlines, so it looks the same everywhere. The launcher icon, launch screen and in-app logo are all made from that SVG. To regenerate the SVG, run `brand/tools/build-logo.js`.
+
 ## Install on your phone
 
 Open the latest release: **https://github.com/aniketpitre/nimbus-book/releases/latest**. Download the `NimbusBook-x.y.z.apk` file and open it. If Android asks, allow your browser or Files app to install unknown apps.
@@ -23,6 +27,7 @@ Open the latest release: **https://github.com/aniketpitre/nimbus-book/releases/l
 |---|---|
 | `web/index.html` | The whole app (HTML, CSS, JS), no frameworks |
 | `web/fonts/` | Bundled fonts so it looks the same offline (SIL OFL) |
+| `brand/`, `web/brand/` | Nimbus System logo: the original and its vector redraw |
 | `build.mjs` | Copies `web/` to `www/` |
 | `capacitor.config.json`, `android/` | [Capacitor 7](https://capacitorjs.com) wraps the web app as a native Android app. Plugins: App (back button), Filesystem and Share (export and backup files) |
 | `.github/workflows/android-release.yml` | Builds the APK on GitHub. Pushing a `v*` tag publishes a GitHub Release with the APK attached |

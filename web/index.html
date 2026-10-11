@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="description" content="Nimbus Book: a simple business cash book. Track cash in and out, pick expenses from a product list. Works fully offline.">
-<meta name="theme-color" content="#3559d6">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M9.5 25h14a6 6 0 0 0 .9-11.93A8 8 0 0 0 9 12.2 6.5 6.5 0 0 0 9.5 25Z' fill='%233559d6'/%3E%3C/svg%3E">
+<meta name="theme-color" content="#1d2557">
+<link rel="icon" href="brand/nimbus-system-logo.svg">
 <title>Nimbus Book</title>
 <link rel="stylesheet" href="fonts/fonts.css">
 <style>
@@ -17,9 +17,9 @@
   --fg:#16202e;
   --dim:#5a6779;
   --line:#d4dce8;
-  --accent:#3559d6;    /* nimbus indigo */
+  --accent:#2a62d0;    /* Nimbus System blue (logo) */
   --accent-ink:#ffffff;
-  --accent-soft:#e1e8fd;
+  --accent-soft:#e0e9fb;
   --in:#127a4a; --in-soft:#dff3e8;
   --out:#c2352b; --out-soft:#fbe4e1;
   --warn-soft:#fff4d6; --warn:#8a5a00;
@@ -195,6 +195,8 @@ button{cursor:pointer}
 .or{display:flex;align-items:center;gap:10px;color:var(--dim);font-size:12px;text-transform:uppercase;letter-spacing:.08em}
 .or::before,.or::after{content:"";flex:1;height:1px;background:var(--line)}
 .fine{margin:0;font-size:12.5px;color:var(--dim)}
+.logo-chip{height:36px;width:auto;flex:none;background:#fff;border-radius:9px;padding:3px 5px;box-shadow:0 0 0 1px var(--line)}
+.setup-logo{width:min(250px,72%);height:auto;background:#fff;border-radius:18px;padding:14px 16px;box-shadow:var(--shadow)}
 .bizname{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .brand{min-width:0}
 .linkbtn{border:0;background:none;padding:0;color:var(--accent);font:inherit;font-weight:600;text-decoration:underline}
@@ -251,7 +253,7 @@ const timeLabel = ts=>new Date(ts).toLocaleTimeString("en-IN",{hour:"numeric",mi
 const toLocalInput = ts=>{const d=new Date(ts);d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().slice(0,16)};
 
 /* ---------- state ---------- */
-const APP_VERSION="1.1.0";
+const APP_VERSION="1.2.0";
 function blankBook(name){return {id:uid(),name,created:Date.now(),entries:[]}}
 // v1.0.0 shipped with a sample book; strip its example entries but keep anything the user added to it.
 const SAMPLE_SIGS=new Set(["Counter sales|4800","Tea ×6, Samosa ×6|210","Payment from Patil Traders|2500","Petrol ×10|1050","Salary Advance — Ramesh|2000","Counter sales|6200","A4 Paper Ream ×2, Printer Ink|880","Opening balance|10000"]);
@@ -360,7 +362,6 @@ function filtered(b){
 }
 
 /* ---------- render ---------- */
-const CLOUD_SVG=`<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M9.5 25h14a6 6 0 0 0 .9-11.93A8 8 0 0 0 9 12.2 6.5 6.5 0 0 0 9.5 25Z" fill="var(--accent)"/><path d="M12 19.5h8M12 16h5" stroke="var(--accent-ink)" stroke-width="2" stroke-linecap="round"/></svg>`;
 const GEAR_SVG=`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg>`;
 function renderSync(){const el=$("#sync");if(el){el.className="sync cloud";el.innerHTML="<i></i>Saved on this phone"}}
 
@@ -368,7 +369,7 @@ function renderSync(){const el=$("#sync");if(el){el.className="sync cloud";el.in
 function showSetup(){
   $("#actionbar").hidden=true;
   $("#app").innerHTML=`<main class="login">
-    ${CLOUD_SVG.replace('<svg ','<svg class="mark" ')}
+    <img class="setup-logo" src="brand/nimbus-system-logo.svg" alt="Nimbus System">
     <h1>Set up Nimbus Book</h1>
     <p class="lede">A cash book for your business. Everything stays on this phone and works without internet.</p>
     <form class="auth" id="setupForm" novalidate>
@@ -482,7 +483,7 @@ function render(){
   // running balance (chronological across the whole book)
   const run={};let acc=0;for(const e of b.entries.slice().sort((x,y)=>x.ts-y.ts)){acc+=e.type==="in"?e.amount:-e.amount;run[e.id]=acc}
   const pct=t.i+t.o?Math.round(t.i/(t.i+t.o)*100):50;
-  let html=`<div class="top"><div class="brand">${CLOUD_SVG}<span class="bizname">${esc(state.business.name||"Nimbus Book")}</span></div>
+  let html=`<div class="top"><div class="brand"><img class="logo-chip" src="brand/nimbus-system-logo.svg" alt="Nimbus System"><span class="bizname">${esc(state.business.name||"Nimbus Book")}</span></div>
     <button class="book-switch" id="openBooks" type="button" aria-label="Switch book"><span>${esc(b.name)}</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></button><button type="button" class="avatar" id="openSettings" aria-label="Settings">${GEAR_SVG}</button></div>`;
   html+=`<section class="balance" aria-label="Balance">
     <div class="row"><span class="label">Net balance</span><span class="sync" id="sync"></span></div>
