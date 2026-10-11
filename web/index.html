@@ -57,9 +57,6 @@ button{cursor:pointer}
 .book-switch span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600}
 .book-switch svg{flex:none;width:14px;height:14px;color:var(--dim)}
 
-.sample{display:flex;gap:10px;align-items:flex-start;background:var(--warn-soft);color:var(--warn);border-radius:var(--r);padding:10px 12px;font-size:13px;margin-block:4px 10px}
-.sample b{color:var(--fg)}
-.sample button{margin-left:auto;flex:none;border:0;background:transparent;color:var(--warn);font-weight:700;text-decoration:underline;padding:0}
 
 /* balance card */
 .balance{background:var(--surface);border-radius:18px;box-shadow:var(--shadow);padding:16px;display:grid;gap:12px}
@@ -198,6 +195,15 @@ button{cursor:pointer}
 .or{display:flex;align-items:center;gap:10px;color:var(--dim);font-size:12px;text-transform:uppercase;letter-spacing:.08em}
 .or::before,.or::after{content:"";flex:1;height:1px;background:var(--line)}
 .fine{margin:0;font-size:12.5px;color:var(--dim)}
+.bizname{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.brand{min-width:0}
+.linkbtn{border:0;background:none;padding:0;color:var(--accent);font:inherit;font-weight:600;text-decoration:underline}
+.plist{display:grid;gap:6px}
+.prow{display:flex;align-items:center;gap:12px;background:var(--surface);border:0;border-radius:12px;padding:11px 14px;text-align:left;width:100%;box-shadow:0 1px 0 var(--line)}
+.prow .pn{display:grid;min-width:0;flex:1}.prow .pn b{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.prow .num{font-weight:600;white-space:nowrap}
+.prow.off{opacity:.55}
+.search .btn{flex:none}
 .confirm{background:var(--out-soft);border-radius:12px;padding:12px;display:grid;gap:10px;font-size:14px}
 .confirm .r{display:flex;gap:8px}
 .toast{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);z-index:40;background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:999px;font-weight:600;font-size:14px;box-shadow:var(--shadow);max-width:calc(100% - 32px)}
@@ -230,7 +236,7 @@ const CATALOG = [
   {cat:"Repairs", items:[["Electrician",500,"visit"],["Plumber",400,"visit"],["Bulb / Tube Light",120,"pc"],["Extension Board",350,"pc"],["Hardware Items",200,"lot"]]}
 ].flatMap(g=>g.items.map(([name,price,unit],i)=>({id:(g.cat+"-"+name).toLowerCase().replace(/[^a-z0-9]+/g,"-"),name,price,unit,cat:g.cat})));
 const CATS = [...new Set(CATALOG.map(p=>p.cat))];
-const IN_CATS = ["Sales","Customer Payment","Owner Capital","Loan Received","Refund","Other Income"];
+const IN_CATS = ["Sales","Opening Balance","Customer Payment","Owner Capital","Loan Received","Refund","Other Income"];
 const MODES = ["Cash","UPI","Card","Bank","Cheque"];
 
 /* ---------- helpers ---------- */
@@ -245,41 +251,29 @@ const timeLabel = ts=>new Date(ts).toLocaleTimeString("en-IN",{hour:"numeric",mi
 const toLocalInput = ts=>{const d=new Date(ts);d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().slice(0,16)};
 
 /* ---------- state ---------- */
-function sampleState(){
-  const now=Date.now(),h=36e5,d=864e5;
-  const e=(type,amount,ago,remark,category,mode,items)=>({id:uid(),type,amount,ts:now-ago,remark,category,mode,party:"",items:items||[]});
-  const id=uid();
-  return {v:1,activeId:id,custom:[],books:[{id,name:"Sample: Shop Ledger",sample:true,created:now-3*d,entries:[
-    e("in",4800,2*h,"Counter sales","Sales","Cash"),
-    e("out",210,3*h,"Tea ×6, Samosa ×6","Tea & Snacks","Cash",[{pid:"tea-snacks-tea",name:"Tea",qty:6,unit:"cup",price:15},{pid:"tea-snacks-samosa",name:"Samosa",qty:6,unit:"pc",price:20}]),
-    e("in",2500,5*h,"Payment from Patil Traders","Customer Payment","UPI"),
-    e("out",1050,d+2*h,"Petrol ×10","Travel","UPI",[{pid:"travel-petrol",name:"Petrol",qty:10,unit:"L",price:105}]),
-    e("out",2000,d+4*h,"Salary Advance — Ramesh","Staff","Cash",[{pid:"staff-salary-advance",name:"Salary Advance",qty:1,unit:"once",price:2000}]),
-    e("in",6200,d+6*h,"Counter sales","Sales","Cash"),
-    e("out",880,2*d+h,"A4 Paper Ream ×2, Printer Ink","Office","Card",[{pid:"office-a4-paper-ream",name:"A4 Paper Ream",qty:2,unit:"ream",price:320},{pid:"office-printer-ink",name:"Printer Ink",qty:1,unit:"pc",price:240}]),
-    e("in",10000,2*d+3*h,"Opening balance","Owner Capital","Bank")
-  ]}]};
-}
+const APP_VERSION="1.1.0";
 function blankBook(name){return {id:uid(),name,created:Date.now(),entries:[]}}
+// v1.0.0 shipped with a sample book; strip its example entries but keep anything the user added to it.
+const SAMPLE_SIGS=new Set(["Counter sales|4800","Tea ×6, Samosa ×6|210","Payment from Patil Traders|2500","Petrol ×10|1050","Salary Advance — Ramesh|2000","Counter sales|6200","A4 Paper Ream ×2, Printer Ink|880","Opening balance|10000"]);
 function normalize(s){
-  if(!s||!Array.isArray(s.books)||!s.books.length) return null;
+  if(!s||!Array.isArray(s.books)) return null;
   s.custom=Array.isArray(s.custom)?s.custom:[];
+  s.overrides=s.overrides&&typeof s.overrides==="object"?s.overrides:{};
+  s.hidden=Array.isArray(s.hidden)?s.hidden:[];
+  s.business=s.business&&typeof s.business==="object"?s.business:{name:""};
+  for(const b of s.books){
+    b.entries=Array.isArray(b.entries)?b.entries:[];
+    if(!b.sample) continue;
+    b.entries=b.entries.filter(e=>!SAMPLE_SIGS.has(e.remark+"|"+e.amount));
+    delete b.sample; b.wasSample=true; if(/^Sample:/.test(b.name)) b.name="My Book";
+  }
+  s.books=s.books.filter(b=>!(b.wasSample&&!b.entries.length));   // drop a sample book nobody wrote in
+  s.books.forEach(b=>delete b.wasSample);
+  if(!s.books.length) return null;                                  // nothing real left: show first-time setup
+  s.v=2;
   if(!s.books.find(b=>b.id===s.activeId)) s.activeId=s.books[0].id;
   return s;
 }
-/* ---------- storage (fully offline: everything stays on this phone) ---------- */
-const DATA_KEY="nimbus-data";
-const store={
-  get(k){try{const v=localStorage.getItem(k);return v?JSON.parse(v):null}catch(e){return null}},
-  set(k,v){try{localStorage.setItem(k,JSON.stringify(v));return true}catch(e){return false}}
-};
-let state=normalize(store.get(DATA_KEY))||sampleState();
-function commit(){
-  state.updatedAt=Date.now();
-  if(!store.set(DATA_KEY,state)) toast("Couldn't save. Your phone may be out of storage.");
-  render();
-}
-
 /* ---------- native (Android app via Capacitor); falls back to the browser ---------- */
 const Cap=window.Capacitor;
 const isNative=!!(Cap&&Cap.isNativePlatform&&Cap.isNativePlatform());
@@ -300,6 +294,57 @@ if(isNative){
   try{plug("App").addListener("backButton",()=>{if($("#scrim"))closeSheet();else if(ui.tab!=="entries"){ui.tab="entries";render()}else plug("App").exitApp()})}catch(e){}
 }
 
+/* ---------- storage (fully offline: everything stays on this phone) ----------
+   Saved twice on the phone: in the app's web storage (fast) and as a JSON file in the app's private
+   data folder (survives web-storage clears). A dated copy is kept once a day, last 7 days. */
+const DATA_KEY="nimbus-data", DATA_FILE="nimbus-data.json", BACKUP_DIR="backups", KEEP_BACKUPS=7;
+const store={
+  get(k){try{const v=localStorage.getItem(k);return v?JSON.parse(v):null}catch(e){return null}},
+  set(k,v){try{localStorage.setItem(k,JSON.stringify(v));return true}catch(e){return false}},
+  del(k){try{localStorage.removeItem(k)}catch(e){}}
+};
+let state=normalize(store.get(DATA_KEY));
+let fileTimer=null;
+function commit(){
+  state.updatedAt=Date.now();
+  const ok=store.set(DATA_KEY,state);
+  if(isNative){clearTimeout(fileTimer);fileTimer=setTimeout(writeDataFile,300)}
+  else if(!ok) toast("Couldn't save. Your phone may be out of storage.");
+  render();
+}
+async function writeDataFile(){
+  const FS=plug("Filesystem");if(!FS||!state)return;
+  const body=JSON.stringify(state);
+  try{await FS.writeFile({path:DATA_FILE,data:body,directory:"DATA",encoding:"utf8"})}
+  catch(e){toast("Couldn't save. Your phone may be out of storage.");return}
+  const today=dayKey(Date.now());
+  if(store.get("nimbus-last-auto-backup")!==today){
+    try{
+      await FS.writeFile({path:`${BACKUP_DIR}/nimbus-${today}.json`,data:body,directory:"DATA",encoding:"utf8",recursive:true});
+      store.set("nimbus-last-auto-backup",today);
+      const old=(await listAutoBackups()).slice(KEEP_BACKUPS);
+      for(const f of old) await FS.deleteFile({path:`${BACKUP_DIR}/${f}`,directory:"DATA"}).catch(()=>{});
+    }catch(e){}
+  }
+}
+async function readJsonFile(path){
+  const FS=plug("Filesystem");if(!FS)return null;
+  try{const r=await FS.readFile({path,directory:"DATA",encoding:"utf8"});return JSON.parse(r.data)}catch(e){return null}
+}
+async function listAutoBackups(){
+  const FS=plug("Filesystem");if(!FS)return [];
+  try{const r=await FS.readdir({path:BACKUP_DIR,directory:"DATA"});
+    return r.files.map(f=>typeof f==="string"?f:f.name).filter(n=>/^nimbus-\d{4}-\d{2}-\d{2}\.json$/.test(n)).sort().reverse()}
+  catch(e){return []}
+}
+async function eraseEverything(){
+  store.del(DATA_KEY);store.del("nimbus-last-auto-backup");
+  const FS=plug("Filesystem");
+  if(FS){await FS.deleteFile({path:DATA_FILE,directory:"DATA"}).catch(()=>{});
+    for(const f of await listAutoBackups()) await FS.deleteFile({path:`${BACKUP_DIR}/${f}`,directory:"DATA"}).catch(()=>{})}
+  state=null;closeSheet();showSetup();
+}
+
 /* ---------- derived ---------- */
 const book=()=>state.books.find(b=>b.id===state.activeId)||state.books[0];
 function totals(entries){let i=0,o=0;for(const e of entries){if(e.type==="in")i+=e.amount;else o+=e.amount}return{i,o,net:i-o}}
@@ -316,23 +361,136 @@ function filtered(b){
 
 /* ---------- render ---------- */
 const CLOUD_SVG=`<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M9.5 25h14a6 6 0 0 0 .9-11.93A8 8 0 0 0 9 12.2 6.5 6.5 0 0 0 9.5 25Z" fill="var(--accent)"/><path d="M12 19.5h8M12 16h5" stroke="var(--accent-ink)" stroke-width="2" stroke-linecap="round"/></svg>`;
+const GEAR_SVG=`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg>`;
 function renderSync(){const el=$("#sync");if(el){el.className="sync cloud";el.innerHTML="<i></i>Saved on this phone"}}
-function boot(){render()}
+
+/* first launch: set up the business */
+function showSetup(){
+  $("#actionbar").hidden=true;
+  $("#app").innerHTML=`<main class="login">
+    ${CLOUD_SVG.replace('<svg ','<svg class="mark" ')}
+    <h1>Set up Nimbus Book</h1>
+    <p class="lede">A cash book for your business. Everything stays on this phone and works without internet.</p>
+    <form class="auth" id="setupForm" novalidate>
+      <div class="field"><label for="sBiz">Business name</label><input id="sBiz" autocomplete="organization" placeholder="e.g. Pitre General Stores" required></div>
+      <div class="field"><label for="sBook">First book</label><input id="sBook" value="Main Book" placeholder="e.g. Main Shop, Site Expenses"></div>
+      <div class="field"><label for="sOpen">Cash in hand right now (₹)</label><input id="sOpen" inputmode="decimal" placeholder="0"><span class="hint">Your starting balance. Leave it empty to start from ₹0.</span></div>
+      <button type="submit" class="btn primary" id="setupGo">Start my cash book</button>
+    </form>
+    <p class="fine">Moving from another phone? <button type="button" class="linkbtn" id="setupRestore">Restore from a backup file</button></p>
+    <input type="file" id="restoreFile" accept="application/json,.json" hidden>
+  </main>`;
+}
+function finishSetup(){
+  const biz=$("#sBiz").value.trim(),bk=$("#sBook").value.trim()||"Main Book",open=parseFloat($("#sOpen").value);
+  if(!biz){toast("Enter your business name");$("#sBiz").focus();return}
+  const b=blankBook(bk);
+  if(open>0) b.entries.push({id:uid(),type:"in",amount:Math.round(open*100)/100,ts:Date.now(),remark:"Opening balance",category:"Opening Balance",mode:"Cash",party:"",items:[]});
+  state={v:2,activeId:b.id,books:[b],custom:[],overrides:{},hidden:[],business:{name:biz},created:Date.now()};
+  $("#actionbar").hidden=false;commit();toast("Your cash book is ready");
+}
+function boot(){
+  if(!state) showSetup(); else {$("#actionbar").hidden=false;render()}
+  if(!isNative) return;
+  readJsonFile(DATA_FILE).then(f=>{
+    const s=normalize(f);
+    if(s&&(!state||(s.updatedAt||0)>(state.updatedAt||0))){state=s;store.set(DATA_KEY,state);closeSheet();$("#actionbar").hidden=false;render()}
+    else if(state&&!f) writeDataFile();      // first run of 1.1: create the data file
+  });
+}
+
+/* products */
+function catalogProduct(p){const o=state.overrides[p.id]||{};return {...p,price:o.price??p.price,unit:o.unit??p.unit}}
+function allProducts(includeHidden){
+  const hid=new Set(state.hidden);
+  return [...state.custom.map(p=>({...p,mine:true})),...CATALOG.map(catalogProduct)].filter(p=>includeHidden||!hid.has(p.id));
+}
+function rememberPrices(items){
+  for(const x of items){
+    if(!(x.price>0))continue;
+    const c=state.custom.find(p=>p.id===x.pid);
+    if(c){c.price=x.price;c.unit=x.unit||c.unit}
+    else if(CATALOG.some(p=>p.id===x.pid)) state.overrides[x.pid]={...(state.overrides[x.pid]||{}),price:x.price};
+  }
+}
+const pui={q:"",cat:"All",showHidden:false};
+function productsView(){
+  const hid=new Set(state.hidden),q=pui.q.trim().toLowerCase();
+  const list=allProducts(true).filter(p=>(pui.showHidden||!hid.has(p.id))&&(pui.cat==="All"||(pui.cat==="Mine"?p.mine:p.cat===pui.cat))&&(!q||p.name.toLowerCase().includes(q)));
+  const cats=["All",...(state.custom.length?["Mine"]:[]),...new Set([...CATS,...state.custom.map(c=>c.cat)])];
+  return `<div class="search"><input id="pmq" type="search" placeholder="Search your ${allProducts().length} products" value="${esc(pui.q)}" aria-label="Search products"><button type="button" class="btn primary sm" id="prodAdd">+ Add</button></div>
+  <div class="chips">${cats.map(c=>`<button type="button" class="chip" data-pmcat="${esc(c)}" aria-pressed="${pui.cat===c}">${c==="Mine"?"My products":esc(c)}</button>`).join("")}</div>
+  <p class="hint" style="margin:0 0 10px">These show up when you tap <b>Cash Out</b>. Prices start as typical market rates; each time you buy, Nimbus Book remembers the price you paid. Tap a product to change it.</p>
+  <div class="plist">${list.length?list.map(p=>`<button type="button" class="prow${hid.has(p.id)?" off":""}" data-prod="${esc(p.id)}"><span class="pn"><b>${esc(p.name)}</b><span class="hint">${esc(p.cat)}${p.mine?" · yours":""}${hid.has(p.id)?" · hidden":""}</span></span><span class="num">${money(p.price)}<span class="hint">/${esc(p.unit)}</span></span></button>`).join("")
+    :`<div class="empty"><b>No products match</b><span>Try another search, or add it with <b>+ Add</b>.</span></div>`}</div>
+  ${state.hidden.length?`<button type="button" class="linkbtn" id="toggleHidden" style="margin-top:12px">${pui.showHidden?"Hide":"Show"} ${state.hidden.length} hidden product${state.hidden.length>1?"s":""}</button>`:""}`;
+}
+let prodEdit=null;
+function openProduct(id){
+  const p=id?allProducts(true).find(x=>x.id===id):{id:null,name:"",price:"",unit:"pc",cat:CATS[0],mine:true};if(!p)return;
+  prodEdit={id:p.id,mine:!!p.mine,confirm:false};
+  const hidden=state.hidden.includes(p.id);
+  const catOpts=[...new Set([...CATS,"Other",...state.custom.map(c=>c.cat)])];
+  let h=`<header><h2>${id?esc(p.name):"New product"}</h2><button class="x" type="button" data-close aria-label="Close">×</button></header><div class="body">
+    ${p.mine?`<div class="field"><label for="pName">Name</label><input id="pName" value="${esc(p.name)}" placeholder="e.g. Shop banner printing" ${id?"":"autofocus"}></div>`:""}
+    <div class="grid2"><div class="field"><label for="pPrice">Price (₹)</label><input id="pPrice" inputmode="decimal" value="${p.price===""?"":+p.price}" placeholder="0"></div>
+    <div class="field"><label for="pUnit">Unit</label><input id="pUnit" value="${esc(p.unit)}" placeholder="pc, kg, L"></div></div>
+    ${p.mine?`<div class="field"><label for="pCat">Category</label><select id="pCat">${catOpts.map(c=>`<option ${p.cat===c?"selected":""}>${esc(c)}</option>`).join("")}</select></div>`
+      :`<span class="hint">${esc(p.cat)} · built-in product. You can change its price and unit, or hide it if you never buy it.</span>`}
+    ${id&&p.mine?`<div class="confirm" id="pDelBox" hidden><span>Delete “${esc(p.name)}”? Past entries keep it.</span><div class="r"><button type="button" class="btn danger sm" id="pDelYes">Delete product</button><button type="button" class="btn ghost sm" id="pDelNo">Keep it</button></div></div>`:""}
+  </div><footer>
+    ${id?(p.mine?`<button type="button" class="btn danger" id="pDel" style="flex:0 0 auto">Delete</button>`:`<button type="button" class="btn ghost" id="pHide" style="flex:0 0 auto">${hidden?"Show again":"Hide"}</button>`):""}
+    <button type="button" class="btn primary" id="pSave">${id?"Save":"Add product"}</button></footer>`;
+  openSheet(h);
+}
+function saveProduct(){
+  const price=parseFloat($("#pPrice").value),unit=$("#pUnit").value.trim()||"pc";
+  if(!(price>=0)){toast("Enter a price (0 is fine)");$("#pPrice").focus();return}
+  if(prodEdit.mine){
+    const name=$("#pName").value.trim(),cat=$("#pCat").value;
+    if(!name){toast("Give the product a name");$("#pName").focus();return}
+    if(prodEdit.id){Object.assign(state.custom.find(c=>c.id===prodEdit.id),{name,price,unit,cat})}
+    else state.custom.unshift({id:"c-"+uid(),name,price,unit,cat});
+  } else state.overrides[prodEdit.id]={price,unit};
+  closeSheet();commit();toast(prodEdit.id?"Product saved":"Product added");
+}
+
+/* settings */
+let setUi={erase:false,restore:null,autos:null};
+async function openSettings(){
+  const autos=setUi.autos;
+  let h=`<header><h2>Settings</h2><button class="x" type="button" data-close aria-label="Close">×</button></header><div class="body">
+    <div class="field"><label for="bizName">Business name</label><input id="bizName" value="${esc(state.business.name)}" placeholder="Your business name"></div>
+    <div class="rep" style="margin:0"><h3>Backup &amp; restore</h3>
+      <span class="hint">Everything is stored on this phone. Uninstalling the app or losing the phone deletes it, so save a backup file to Google Drive, WhatsApp or email now and then.</span>
+      <div class="actions"><button type="button" class="btn primary sm" id="backupBtn">Back up all books</button><button type="button" class="btn ghost sm" id="restoreBtn">Restore from a file</button></div>
+      <input type="file" id="restoreFile" accept="application/json,.json" hidden>
+      ${isNative?`<span class="flabel" style="margin-top:4px">Automatic daily backups on this phone</span>
+        ${autos===null?`<span class="hint">Loading…</span>`:autos.length?`<div class="books">${autos.map(f=>`<button type="button" class="bk" data-auto="${esc(f)}"><span style="min-width:0"><span class="nm" style="display:block">${dayLabel(f.slice(7,17))}</span><span class="sub">Tap to restore this day's copy</span></span></button>`).join("")}</div>`:`<span class="hint">The first one is made today, after your next change.</span>`}`:""}
+      ${setUi.restore?`<div class="confirm"><span>Replace everything on this phone with ${esc(setUi.restore.label)} (${setUi.restore.data.books.length} book${setUi.restore.data.books.length>1?"s":""}, ${setUi.restore.data.books.reduce((n,b)=>n+b.entries.length,0)} entries)? What's on the phone now will be overwritten.</span><div class="r"><button type="button" class="btn danger sm" id="restoreYes">Restore</button><button type="button" class="btn ghost sm" id="restoreNo">Cancel</button></div></div>`:""}
+    </div>
+    <div class="rep" style="margin:0"><h3>Erase all data</h3><span class="hint">Deletes every book, entry, product change and automatic backup from this phone.</span>
+      ${setUi.erase?`<div class="confirm"><span>Type <b>ERASE</b> to confirm. This can't be undone.</span><input id="eraseConfirm" autocomplete="off" style="border:1px solid var(--line);border-radius:10px;padding:9px 11px;background:var(--surface)"><div class="r"><button type="button" class="btn danger sm" id="eraseYes">Erase everything</button><button type="button" class="btn ghost sm" id="eraseNo">Cancel</button></div></div>`
+        :`<div class="actions"><button type="button" class="btn danger sm" id="eraseBtn">Erase all data…</button></div>`}</div>
+    <span class="hint">Nimbus Book ${APP_VERSION} · works offline</span>
+  </div>`;
+  openSheet(h);
+  if(isNative&&autos===null){setUi.autos=await listAutoBackups();if($("#bizName"))openSettings()}
+}
 function render(){
   const b=book(), t=totals(b.entries), list=filtered(b).slice().sort((x,y)=>y.ts-x.ts);
   // running balance (chronological across the whole book)
   const run={};let acc=0;for(const e of b.entries.slice().sort((x,y)=>x.ts-y.ts)){acc+=e.type==="in"?e.amount:-e.amount;run[e.id]=acc}
   const pct=t.i+t.o?Math.round(t.i/(t.i+t.o)*100):50;
-  let html=`<div class="top"><div class="brand">${CLOUD_SVG}Nimbus Book</div>
-    <button class="book-switch" id="openBooks" type="button" aria-label="Switch book"><span>${esc(b.name)}</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></button></div>`;
-  if(b.sample) html+=`<div class="sample"><span><b>This is a sample book.</b> The figures are examples. Add your own book from the book menu.</span><button type="button" id="clearSample">Clear sample</button></div>`;
+  let html=`<div class="top"><div class="brand">${CLOUD_SVG}<span class="bizname">${esc(state.business.name||"Nimbus Book")}</span></div>
+    <button class="book-switch" id="openBooks" type="button" aria-label="Switch book"><span>${esc(b.name)}</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></button><button type="button" class="avatar" id="openSettings" aria-label="Settings">${GEAR_SVG}</button></div>`;
   html+=`<section class="balance" aria-label="Balance">
     <div class="row"><span class="label">Net balance</span><span class="sync" id="sync"></span></div>
     <div class="net" style="color:${t.net<0?"var(--out)":"var(--fg)"}">${t.net<0?"−":""}${money(Math.abs(t.net))}</div>
     <div class="meter" title="Share of cash in"><i style="width:${pct}%"></i></div>
     <div class="split"><div class="i"><span class="label">Total in</span><span class="num">${money(t.i)}</span></div><div class="o"><span class="label">Total out</span><span class="num">${money(t.o)}</span></div></div>
   </section>
-  <div class="tabs" role="tablist"><button role="tab" type="button" data-tab="entries" aria-selected="${ui.tab==="entries"}">Entries</button><button role="tab" type="button" data-tab="reports" aria-selected="${ui.tab==="reports"}">Reports</button></div>`;
+  <div class="tabs" role="tablist"><button role="tab" type="button" data-tab="entries" aria-selected="${ui.tab==="entries"}">Entries</button><button role="tab" type="button" data-tab="reports" aria-selected="${ui.tab==="reports"}">Reports</button><button role="tab" type="button" data-tab="products" aria-selected="${ui.tab==="products"}">Products</button></div>`;
   if(ui.tab==="entries"){
     html+=`<div class="search"><input id="q" type="search" placeholder="Search remark, product, amount" value="${esc(ui.q)}" aria-label="Search entries"></div>
     <div class="chips" role="group" aria-label="Filters">
@@ -356,7 +514,8 @@ function render(){
       }
       html+=`</div></div>`;
     }
-  } else html+=reports(b);
+  } else if(ui.tab==="products") html+=productsView();
+  else html+=reports(b);
   $("#app").innerHTML=html; renderSync();
 }
 function chip(group,val,label){const on=ui[group]===val;return `<button type="button" class="chip" data-f="${group}" data-v="${esc(val)}" aria-pressed="${on}">${esc(label)}</button>`}
@@ -374,11 +533,7 @@ function reports(b){
   <div class="rep"><h3>Money in by source</h3>${bars(ins,"inb")}</div>
   <div class="rep"><h3>Top products bought</h3>${top.length?top.map(([n,p])=>`<div class="bar"><span>${esc(n)} <span class="hint">· ${+p.q.toFixed(2)} ${esc(p.unit)}</span></span><span class="num">${money(p.amt)}</span></div>`).join(""):`<span class="hint">Products you pick in Cash Out show up here.</span>`}</div>
   <div class="rep"><h3>Export</h3><span class="hint">${b.entries.length} entries · net ${t.net<0?"−":""}${money(Math.abs(t.net))}. The CSV opens in Excel and Google Sheets.</span>
-    <div class="actions"><button type="button" class="btn primary sm" id="exportCsv">Download CSV</button><button type="button" class="btn ghost sm" id="copyCsv">Copy as CSV</button></div></div>
-  <div class="rep"><h3>Backup &amp; restore</h3><span class="hint">Nimbus Book keeps everything on this phone, with no internet needed. Make a backup now and then, and keep the file somewhere safe. You'll need it if you change phones or uninstall the app.</span>
-    <div class="actions"><button type="button" class="btn primary sm" id="backupBtn">Back up all books</button><button type="button" class="btn ghost sm" id="restoreBtn">Restore from backup</button></div>
-    <input type="file" id="restoreFile" accept="application/json,.json" hidden>
-    ${pendingRestore?`<div class="confirm"><span>Replace everything on this phone with the backup (${pendingRestore.books.length} book${pendingRestore.books.length>1?"s":""}, ${pendingRestore.books.reduce((n,b)=>n+b.entries.length,0)} entries)? Your current books will be overwritten.</span><div class="r"><button type="button" class="btn danger sm" id="restoreYes">Restore backup</button><button type="button" class="btn ghost sm" id="restoreNo">Cancel</button></div></div>`:""}</div>`;
+    <div class="actions"><button type="button" class="btn primary sm" id="exportCsv">Download CSV</button><button type="button" class="btn ghost sm" id="copyCsv">Copy as CSV</button></div></div>`;
 }
 
 /* ---------- toast ---------- */
@@ -396,7 +551,6 @@ function openEntry(type,existing){
     items:(e.items||[]).map(x=>({...x})),cat:"All",pq:"",manualAmount:!!(existing&&!(e.items||[]).length),confirmDel:false,customOpen:false};
   drawEntry();
 }
-function allProducts(){return [...state.custom.map(p=>({...p,mine:true})),...CATALOG]}
 function itemsTotal(){return draft.items.reduce((s,x)=>s+(+x.qty||0)*(+x.price||0),0)}
 function autoRemark(){return draft.items.map(x=>x.name+(+x.qty!==1?" ×"+(+x.qty):"")).join(", ")}
 function drawEntry(){
@@ -408,7 +562,7 @@ function drawEntry(){
   if(isOut){
     h+=`<div class="picker">
       <div class="picker-head"><span class="flabel">Pick products</span><button type="button" class="btn ghost sm" id="customBtn">+ Custom</button></div>
-      <input id="pq" type="search" placeholder="Search ${CATALOG.length}+ products" value="${esc(d.pq)}" aria-label="Search products" style="border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:9px 11px">
+      <input id="pq" type="search" placeholder="Search ${allProducts().length} products" value="${esc(d.pq)}" aria-label="Search products" style="border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:9px 11px">
       <div class="cats">${["All",...(state.custom.length?["Mine"]:[]),...CATS].map(c=>`<button type="button" class="chip" data-pcat="${esc(c)}" aria-pressed="${d.cat===c}">${c==="Mine"?"My products":esc(c)}</button>`).join("")}</div>
       ${d.customOpen?customForm():""}
       <div class="prods">${prods.map(p=>{const q=qtyOf(p.id);return `<button type="button" class="prod${q?" on":""}" data-pid="${esc(p.id)}">${q?`<span class="q">${+q}</span>`:""}${p.mine?`<span class="mine">Custom</span>`:""}<span class="n">${esc(p.name)}</span><span class="p num">${money(p.price)}/${esc(p.unit)}</span></button>`}).join("")}
@@ -463,6 +617,7 @@ function saveEntry(){
     items:d.items.map(x=>({pid:x.pid,name:x.name,qty:+x.qty||0,unit:x.unit,price:+x.price||0})).filter(x=>x.qty>0)};
   const b=book();const i=b.entries.findIndex(x=>x.id===entry.id);
   if(i>=0)b.entries[i]=entry;else b.entries.push(entry);
+  if(isOut)rememberPrices(entry.items);
   closeSheet();commit();toast(d.id?"Entry updated":isOut?"Cash out saved":"Cash in saved");
 }
 function addProduct(p){
@@ -474,8 +629,8 @@ function addProduct(p){
 /* books sheet */
 let booksUi={adding:false,renaming:null,confirmDel:null};
 function openBooks(){
-  const rows=state.books.map(b=>{const t=totals(b.entries);return `<button type="button" class="bk${b.id===state.activeId?" on":""}" data-book="${b.id}"><span class="ic">${esc((b.name.replace(/^Sample:\s*/,"")[0]||"B").toUpperCase())}</span>
-    <span style="min-width:0"><span class="nm" style="display:block">${esc(b.name)}</span><span class="sub">${b.entries.length} entries${b.sample?" · sample":""}</span></span>
+  const rows=state.books.map(b=>{const t=totals(b.entries);return `<button type="button" class="bk${b.id===state.activeId?" on":""}" data-book="${b.id}"><span class="ic">${esc((b.name[0]||"B").toUpperCase())}</span>
+    <span style="min-width:0"><span class="nm" style="display:block">${esc(b.name)}</span><span class="sub">${b.entries.length} entries</span></span>
     <span class="v num" style="color:${t.net<0?"var(--out)":"var(--in)"}">${t.net<0?"−":""}${money(Math.abs(t.net))}</span></button>`}).join("");
   const cur=book();
   let h=`<header><h2>Your books</h2><button class="x" type="button" data-close aria-label="Close">×</button></header><div class="body">
@@ -514,12 +669,14 @@ function csv(){
 }
 
 /* ---------- restore ---------- */
-let pendingRestore=null;
+function backupPayload(){return JSON.stringify({app:"nimbus-book",version:2,exportedAt:new Date().toISOString(),data:state})}
 document.addEventListener("change",async ev=>{
   if(ev.target.id!=="restoreFile")return;
-  const f=ev.target.files&&ev.target.files[0];if(!f)return;
-  try{const j=JSON.parse(await f.text());const d=normalize(j&&j.data?j.data:j);if(!d)throw 0;pendingRestore=d;ui.tab="reports";render()}
-  catch(e){toast("That file isn't a Nimbus Book backup.")}
+  const f=ev.target.files&&ev.target.files[0];ev.target.value="";if(!f)return;
+  let d=null;try{const j=JSON.parse(await f.text());d=normalize(j&&j.data?j.data:j)}catch(e){}
+  if(!d){toast("That file isn't a Nimbus Book backup.");return}
+  if(!state){state=d;$("#actionbar").hidden=false;commit();toast("Backup restored");return}
+  setUi.restore={label:"the backup file",data:d};openSettings();
 });
 
 /* ---------- events ---------- */
@@ -530,7 +687,23 @@ document.addEventListener("click",async ev=>{
   if(t.id==="btnIn")return openEntry("in");
   if(t.id==="btnOut")return openEntry("out");
   if(t.id==="openBooks"){booksUi={adding:false,renaming:null,confirmDel:null};return openBooks()}
-  if(t.id==="clearSample"){const b=book();b.entries=[];b.name="My Book";delete b.sample;commit();toast("Sample cleared");return}
+  if(t.id==="setupRestore"||t.id==="restoreBtn"){$("#restoreFile").click();return}
+  if(t.id==="openSettings"){setUi={erase:false,restore:null,autos:null};return openSettings()}
+  if(t.dataset.auto){const d=normalize(await readJsonFile(BACKUP_DIR+"/"+t.dataset.auto));if(!d){toast("That backup couldn't be read.");return}setUi.restore={label:"the copy from "+dayLabel(t.dataset.auto.slice(7,17)),data:d};return openSettings()}
+  if(t.id==="restoreYes"){state=setUi.restore.data;setUi.restore=null;closeSheet();commit();toast("Backup restored");return}
+  if(t.id==="restoreNo"){setUi.restore=null;return openSettings()}
+  if(t.id==="eraseBtn"){setUi.erase=true;return openSettings()}
+  if(t.id==="eraseNo"){setUi.erase=false;return openSettings()}
+  if(t.id==="eraseYes"){if(($("#eraseConfirm").value||"").trim().toUpperCase()!=="ERASE"){toast("Type ERASE to confirm");$("#eraseConfirm").focus();return}await eraseEverything();toast("All data erased");return}
+  if(t.dataset.pmcat){pui.cat=t.dataset.pmcat;return render()}
+  if(t.id==="toggleHidden"){pui.showHidden=!pui.showHidden;return render()}
+  if(t.id==="prodAdd")return openProduct(null);
+  if(t.dataset.prod)return openProduct(t.dataset.prod);
+  if(t.id==="pSave")return saveProduct();
+  if(t.id==="pHide"){const id=prodEdit.id;state.hidden=state.hidden.includes(id)?state.hidden.filter(x=>x!==id):[...state.hidden,id];closeSheet();commit();toast(state.hidden.includes(id)?"Hidden from Cash Out":"Shown in Cash Out again");return}
+  if(t.id==="pDel"){$("#pDelBox").hidden=false;return}
+  if(t.id==="pDelNo"){$("#pDelBox").hidden=true;return}
+  if(t.id==="pDelYes"){state.custom=state.custom.filter(c=>c.id!==prodEdit.id);closeSheet();commit();toast("Product deleted");return}
   if(t.dataset.tab){ui.tab=t.dataset.tab;return render()}
   if(t.dataset.f){ui[t.dataset.f]=ui[t.dataset.f]===t.dataset.v?"all":t.dataset.v;return render()}
   if(t.dataset.entry)return openDetail(t.dataset.entry);
@@ -541,12 +714,9 @@ document.addEventListener("click",async ev=>{
     return}
   if(t.id==="copyCsv"){try{await navigator.clipboard.writeText(csv());toast("CSV copied")}catch(e){toast("Copy isn't allowed here")}return}
   if(t.id==="backupBtn"){
-    const d=new Date(),name=`nimbus-book-backup-${dayKey(d.getTime())}.json`;
-    try{await saveFile(name,JSON.stringify({app:"nimbus-book",version:1,exportedAt:d.toISOString(),data:state}),"application/json");toast(isNative?"Backup ready. Save it to Drive or send it to yourself.":"Backup downloaded")}catch(e){toast("Couldn't create the backup.")}
+    const name=`nimbus-book-backup-${dayKey(Date.now())}.json`;
+    try{await saveFile(name,backupPayload(),"application/json");toast(isNative?"Backup ready. Save it to Drive or send it to yourself.":"Backup downloaded")}catch(e){toast("Couldn't create the backup.")}
     return}
-  if(t.id==="restoreBtn"){$("#restoreFile").click();return}
-  if(t.id==="restoreYes"){state=pendingRestore;pendingRestore=null;commit();toast("Backup restored");return}
-  if(t.id==="restoreNo"){pendingRestore=null;render();return}
   // entry sheet
   if(draft&&$("#amt")){
     if(t.dataset.mode){readDraftFields();draft.mode=t.dataset.mode;return drawEntry()}
@@ -563,7 +733,7 @@ document.addEventListener("click",async ev=>{
       if(!(price>=0)){toast("Enter a price (0 is fine)");$("#cPrice").focus();return}
       readDraftFields();
       const p={id:"c-"+uid(),name,price,unit,cat};
-      if(keep){state.custom.unshift(p);persistLocal();commit()}
+      if(keep){state.custom.unshift(p);commit()}
       addProduct(p);draft.customOpen=false;toast(keep?"Added and saved to My products":"Added to this entry");return drawEntry()}
     if(t.id==="saveEntry")return saveEntry();
     if(t.id==="delEntry"){readDraftFields();draft.confirmDel=true;return drawEntry()}
@@ -576,14 +746,17 @@ document.addEventListener("click",async ev=>{
   if(t.id==="bkRename"){booksUi.renaming=state.activeId;return openBooks()}
   if(t.id==="bkCancel"){booksUi={adding:false,renaming:null,confirmDel:null};return openBooks()}
   if(t.id==="bkSave"){const n=$("#bkName").value.trim();if(!n){toast("Give the book a name");return}
-    if(booksUi.renaming){const b=book();b.name=n;delete b.sample}else{const nb=blankBook(n);state.books.push(nb);state.activeId=nb.id}
+    if(booksUi.renaming){book().name=n}else{const nb=blankBook(n);state.books.push(nb);state.activeId=nb.id}
     booksUi={adding:false,renaming:null,confirmDel:null};closeSheet();commit();toast("Saved “"+n+"”");return}
   if(t.id==="bkDel"){booksUi.confirmDel=state.activeId;return openBooks()}
   if(t.id==="bkDelNo"){booksUi.confirmDel=null;return openBooks()}
   if(t.id==="bkDelYes"){state.books=state.books.filter(b=>b.id!==state.activeId);state.activeId=state.books[0].id;booksUi={adding:false,renaming:null,confirmDel:null};closeSheet();commit();toast("Book deleted");return}
 });
+document.addEventListener("submit",ev=>{if(ev.target.id==="setupForm"){ev.preventDefault();finishSetup()}});
+document.addEventListener("change",ev=>{if(ev.target.id==="bizName"){const n=ev.target.value.trim();if(n&&n!==state.business.name){state.business.name=n;commit();toast("Business name saved")}}});
 document.addEventListener("input",ev=>{
   const t=ev.target;
+  if(t.id==="pmq"){pui.q=t.value;const pos=t.selectionStart;render();const q=$("#pmq");q.focus();try{q.setSelectionRange(pos,pos)}catch(e){}return}
   if(t.id==="q"){ui.q=t.value;const pos=t.selectionStart;render();const q=$("#q");q.focus();try{q.setSelectionRange(pos,pos)}catch(e){}return}
   if(!draft)return;
   if(t.id==="pq"){readDraftFields();draft.pq=t.value;const pos=t.selectionStart;drawEntry();const q=$("#pq");q.focus();try{q.setSelectionRange(pos,pos)}catch(e){}return}
