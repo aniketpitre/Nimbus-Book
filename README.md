@@ -15,7 +15,7 @@ A simple business cash book for Android that works **fully offline**. All data s
 
 ## Brand
 
-The app uses the **Nimbus System** logo. `brand/nimbus-system-logo-original.png` is the original, and `brand/nimbus-system-logo.svg` is a clean vector redraw of it (same arc, sky, mouse and cable, clouds, *Nimbus* script and *SYSTEM* lettering, with the colours taken from the original). The letters are converted to outlines, so it looks the same everywhere. The launcher icon, launch screen and in-app logo are all made from that SVG. To regenerate the SVG, run `brand/tools/build-logo.js`.
+The app uses the **Nimbus System** logo. `brand/nimbus-system-logo-original.png` is the original, and `brand/nimbus-system-logo.svg` is a clean vector redraw of it (same arc, sky, mouse and cable, clouds, *Nimbus* script and *SYSTEM* lettering, with the colours taken from the original). The letters are converted to outlines, so it looks the same everywhere. The launcher icon, launch screen and in-app logo are all made from that SVG. `brand/tools/build-logo.js` is the script that generated it. It uses opentype.js and the Norican and Archivo Black fonts from `@fontsource`, set the `SP` path to where those are installed.
 
 ## Install on your phone
 
