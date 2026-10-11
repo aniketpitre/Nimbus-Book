@@ -20,23 +20,27 @@ const pid = async () => (await sh(`pidof ${PKG}`)).trim();
 const appFile = async rel => sh(`run-as ${PKG} cat files/${rel}`).catch(() => "");
 const appLs = async rel => sh(`run-as ${PKG} ls files/${rel}`).catch(() => "");
 
+async function stop() { await sh(`am force-stop ${PKG}`); await sleep(800); }
+// Start the app in a fresh process and attach to its WebView. (After the app closes itself Android may
+// keep the old process, whose WebView entry is stale, so always force-stop first.)
 async function launch() {
+  await stop();
   await sh(`monkey -p ${PKG} -c android.intent.category.LAUNCHER 1`);
   for (let i = 0; i < 60; i++) {
     const p = await pid();
     const wv = p && device.webViews().find(w => String(w.pid()) === p);
     if (wv) {
-      const page = await wv.page();
-      await page.waitForLoadState("domcontentloaded");
-      await page.waitForFunction(() => document.querySelector("#setupForm, .balance"), null, { timeout: 30000 });
-      await sleep(600);
-      return page;
+      try {
+        const page = await wv.page();
+        await page.waitForFunction(() => document.querySelector("#setupForm, .balance"), null, { timeout: 30000 });
+        await sleep(600);
+        return page;
+      } catch (e) { console.log("  (WebView not ready yet: " + e.message.split("\n")[0] + ")"); }
     }
     await sleep(500);
   }
   throw new Error("App WebView did not appear");
 }
-async function stop() { await sh(`am force-stop ${PKG}`); await sleep(800); }
 const t = async (page, sel) => ((await page.textContent(sel)) || "").replace(/\s+/g, " ").trim();
 
 section("Install and first launch");
@@ -95,11 +99,9 @@ await page.click('[data-tab="entries"]');
 await page.click("#btnIn"); await page.fill("#amt", "90"); await page.click("#saveEntry");
 await sh("input keyevent KEYCODE_HOME"); await sleep(1200);
 check(/"amount":90/.test(await appFile("nimbus-data.json")), "going to the home screen saves straight away");
-await stop();
 page = await launch();
 check(rupees(await t(page, ".balance .net")) === 2500, "data is still there after the app is force-stopped", await t(page, ".balance .net"));
 await page.evaluate(() => localStorage.removeItem("nimbus-data"));
-await stop();
 page = await launch();
 await sleep(800);
 check(rupees(await t(page, ".balance .net")) === 2500 && !(await page.isVisible("#setupForm")), "if web storage is wiped, data is restored from the file");
