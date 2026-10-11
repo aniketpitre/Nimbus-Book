@@ -1,0 +1,738 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="Nimbus Book: a simple business cash book. Track cash in and out, pick expenses from a product list, and save it all to your Google Drive.">
+<meta name="theme-color" content="#3559d6">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M9.5 25h14a6 6 0 0 0 .9-11.93A8 8 0 0 0 9 12.2 6.5 6.5 0 0 0 9.5 25Z' fill='%233559d6'/%3E%3C/svg%3E">
+<title>Nimbus Book</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Hanken+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+/* Layout: one phone-width app column (max 520px) — sticky book header, entry ledger, fixed Cash In / Cash Out bar, bottom sheets for forms. */
+:root{
+  --bg:#eef2f8;        /* overcast sky */
+  --surface:#ffffff;
+  --sunk:#e3e9f2;
+  --fg:#16202e;
+  --dim:#5a6779;
+  --line:#d4dce8;
+  --accent:#3559d6;    /* nimbus indigo */
+  --accent-ink:#ffffff;
+  --accent-soft:#e1e8fd;
+  --in:#127a4a; --in-soft:#dff3e8;
+  --out:#c2352b; --out-soft:#fbe4e1;
+  --warn-soft:#fff4d6; --warn:#8a5a00;
+  --shadow:0 1px 2px rgba(22,32,46,.06),0 6px 24px rgba(22,32,46,.08);
+  --f-display:"Bricolage Grotesque","Hanken Grotesk",system-ui,sans-serif;
+  --f-body:"Hanken Grotesk",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-num:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+  --r:14px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0c1220;--surface:#141c2d;--sunk:#1b2539;--fg:#e7ecf5;--dim:#98a4b8;--line:#28334a;
+  --accent:#7c97ff;--accent-ink:#0c1220;--accent-soft:#1f2a4d;
+  --in:#4fd08f;--in-soft:#12301f;--out:#ff7a6e;--out-soft:#3a1a18;--warn-soft:#33280e;--warn:#f0c46a;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 28px rgba(0,0,0,.35);color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0c1220;--surface:#141c2d;--sunk:#1b2539;--fg:#e7ecf5;--dim:#98a4b8;--line:#28334a;
+  --accent:#7c97ff;--accent-ink:#0c1220;--accent-soft:#1f2a4d;
+  --in:#4fd08f;--in-soft:#12301f;--out:#ff7a6e;--out-soft:#3a1a18;--warn-soft:#33280e;--warn:#f0c46a;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 28px rgba(0,0,0,.35);color-scheme:dark}
+
+*{box-sizing:border-box}
+html,body{min-height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 var(--f-body);-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.num{font-family:var(--f-num);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.app{max-width:520px;margin:0 auto;padding-inline:16px;padding-block:0 120px}
+
+/* top bar */
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);padding-block:14px 10px;display:flex;align-items:center;gap:10px}
+.brand{display:flex;align-items:center;gap:8px;font:700 19px/1 var(--f-display);letter-spacing:-.02em}
+.brand svg{width:26px;height:26px;flex:none}
+.book-switch{margin-left:auto;display:flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:7px 12px;min-width:0;max-width:52%}
+.book-switch span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600}
+.book-switch svg{flex:none;width:14px;height:14px;color:var(--dim)}
+
+.sample{display:flex;gap:10px;align-items:flex-start;background:var(--warn-soft);color:var(--warn);border-radius:var(--r);padding:10px 12px;font-size:13px;margin-block:4px 10px}
+.sample b{color:var(--fg)}
+.sample button{margin-left:auto;flex:none;border:0;background:transparent;color:var(--warn);font-weight:700;text-decoration:underline;padding:0}
+
+/* balance card */
+.balance{background:var(--surface);border-radius:18px;box-shadow:var(--shadow);padding:16px;display:grid;gap:12px}
+.balance .row{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.balance .label{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);font-weight:600}
+.balance .net{font:600 30px/1.1 var(--f-num);font-variant-numeric:tabular-nums}
+.split{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.split>div{border-radius:12px;padding:10px 12px;display:grid;gap:2px}
+.split .i{background:var(--in-soft)}.split .i .num{color:var(--in)}
+.split .o{background:var(--out-soft)}.split .o .num{color:var(--out)}
+.split .num{font-size:17px;font-weight:600}
+.meter{height:6px;border-radius:99px;background:var(--out-soft);overflow:hidden}
+.meter i{display:block;height:100%;background:var(--in);border-radius:99px}
+.sync{font-size:12px;color:var(--dim);display:flex;align-items:center;gap:6px}
+.sync i{width:7px;height:7px;border-radius:50%;background:var(--dim)}
+.sync.cloud i{background:var(--in)}
+
+/* tabs + filters */
+.tabs{display:flex;gap:4px;background:var(--sunk);padding:4px;border-radius:12px;margin-block:16px 10px}
+.tabs button{flex:1;border:0;background:transparent;padding:8px;border-radius:9px;font-weight:600;color:var(--dim)}
+.tabs button[aria-selected="true"]{background:var(--surface);color:var(--fg);box-shadow:var(--shadow)}
+.search{display:flex;gap:8px}
+.search input{flex:1;min-width:0;border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:10px 12px}
+.chips{display:flex;gap:6px;overflow-x:auto;padding-block:10px;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:none;border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 12px;font-size:13px;font-weight:600;color:var(--dim)}
+.chip[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+
+/* ledger */
+.day{display:flex;justify-content:space-between;font-size:12px;color:var(--dim);font-weight:600;letter-spacing:.04em;text-transform:uppercase;padding-block:14px 6px}
+.entries{display:grid;gap:8px}
+.entry{display:grid;grid-template-columns:1fr auto;gap:4px 12px;background:var(--surface);border-radius:var(--r);padding:12px 14px;border:0;text-align:left;width:100%;box-shadow:0 1px 0 var(--line)}
+.entry .t{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.entry .amt{font:600 16px var(--f-num);font-variant-numeric:tabular-nums;text-align:right}
+.entry.in .amt{color:var(--in)}.entry.out .amt{color:var(--out)}
+.entry .meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:12px;color:var(--dim);min-width:0}
+.tag{background:var(--sunk);border-radius:6px;padding:1px 7px;font-weight:600}
+.entry .bal{font-size:12px;color:var(--dim);text-align:right}
+.empty{text-align:center;color:var(--dim);padding:40px 12px;display:grid;gap:6px;justify-items:center}
+.empty b{color:var(--fg);font:600 17px var(--f-display)}
+
+/* reports */
+.rep{background:var(--surface);border-radius:var(--r);padding:14px;display:grid;gap:12px;margin-top:10px}
+.rep h3{margin:0;font:600 15px var(--f-display)}
+.bar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px;font-size:13px}
+.bar .track{grid-column:1/-1;height:8px;background:var(--sunk);border-radius:99px;overflow:hidden}
+.bar .track i{display:block;height:100%;border-radius:99px;background:var(--accent)}
+.bar.inb .track i{background:var(--in)}
+.rep .actions{display:flex;gap:8px;flex-wrap:wrap}
+
+/* bottom action bar */
+.actionbar{position:fixed;left:0;right:0;bottom:0;z-index:6;background:linear-gradient(to top,var(--bg) 70%,transparent);padding:16px 16px calc(14px + env(safe-area-inset-bottom,0px))}
+.actionbar .inner{max-width:488px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.btn{border:0;border-radius:12px;padding:13px 14px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.btn.in{background:var(--in);color:var(--surface)}
+.btn.out{background:var(--out);color:var(--surface)}
+.btn.primary{background:var(--accent);color:var(--accent-ink)}
+.btn.ghost{background:var(--sunk);color:var(--fg)}
+.btn.danger{background:transparent;color:var(--out);border:1px solid var(--out)}
+.btn.sm{padding:8px 12px;font-size:13px;border-radius:10px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+
+/* sheets */
+.scrim{position:fixed;inset:0;z-index:20;background:rgba(8,12,22,.45);display:flex;align-items:flex-end;justify-content:center}
+.sheet{background:var(--bg);width:100%;max-width:520px;max-height:92vh;max-height:92dvh;border-radius:20px 20px 0 0;display:flex;flex-direction:column;overflow:hidden;animation:up .22s ease-out}
+@keyframes up{from{transform:translateY(24px);opacity:.6}to{transform:none;opacity:1}}
+.sheet.still{animation:none}
+@media (prefers-reduced-motion:reduce){.sheet{animation:none}}
+.sheet header{display:flex;align-items:center;gap:10px;padding:16px 16px 10px}
+.sheet header h2{margin:0;font:700 20px/1.2 var(--f-display);letter-spacing:-.01em}
+.sheet header .x{margin-left:auto;border:0;background:var(--sunk);border-radius:50%;width:34px;height:34px;font-size:18px;line-height:1}
+.sheet .body{overflow-y:auto;padding:0 16px 16px;display:grid;gap:14px}
+.sheet footer{padding:12px 16px calc(14px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--line);background:var(--surface);display:flex;gap:10px;align-items:center}
+.sheet footer .btn{flex:1}
+.sheet.in-mode header h2{color:var(--in)}
+.sheet.out-mode header h2{color:var(--out)}
+
+.field{display:grid;gap:5px}
+.field>label,.flabel{font-size:12px;font-weight:600;color:var(--dim);letter-spacing:.04em;text-transform:uppercase}
+.field input,.field select,.field textarea{border:1px solid var(--line);background:var(--surface);border-radius:11px;padding:11px 12px;width:100%;min-width:0}
+.amount-in{font:600 26px var(--f-num)!important;font-variant-numeric:tabular-nums}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.seg{display:flex;gap:6px;flex-wrap:wrap}
+.seg button{border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:8px 12px;font-weight:600;font-size:13px}
+.seg button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+
+/* product picker */
+.picker{background:var(--surface);border-radius:var(--r);padding:12px;display:grid;gap:10px}
+.picker-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.picker-head .flabel{margin-right:auto}
+.cats{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
+.cats::-webkit-scrollbar{display:none}
+.prods{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;max-height:260px;overflow-y:auto;padding:2px}
+.prod{border:1px solid var(--line);background:var(--bg);border-radius:12px;padding:9px 10px;text-align:left;display:grid;gap:2px;position:relative;min-width:0}
+.prod .n{font-weight:600;font-size:13.5px;line-height:1.25}
+.prod .p{font-size:12px;color:var(--dim)}
+.prod.on{border-color:var(--accent);background:var(--accent-soft)}
+.prod .q{position:absolute;top:6px;right:6px;background:var(--accent);color:var(--accent-ink);font:600 11px var(--f-num);border-radius:99px;padding:1px 6px}
+.prod.custom{border-style:dashed;color:var(--accent);font-weight:700;display:flex;align-items:center;justify-content:center;gap:6px;min-height:58px}
+.prod .mine{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);font-weight:700}
+.cart{display:grid;gap:6px}
+.line{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;gap:8px;align-items:center;font-size:13.5px;background:var(--bg);border-radius:10px;padding:6px 8px}
+.line .nm{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.step{display:flex;align-items:center;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.step button{border:0;background:var(--surface);width:28px;height:28px;font-weight:700}
+.step input{width:44px;border:0;text-align:center;background:var(--surface);padding:0;height:28px;font-family:var(--f-num)}
+.line .pr{width:72px;border:1px solid var(--line);border-radius:8px;padding:4px 6px;text-align:right;font-family:var(--f-num);background:var(--surface)}
+.line .rm{border:0;background:transparent;color:var(--dim);font-size:18px;width:24px}
+.cart-total{display:flex;justify-content:space-between;font-weight:700;padding-inline:4px}
+.hint{font-size:12.5px;color:var(--dim)}
+
+.books{display:grid;gap:8px}
+.bk{display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px;text-align:left;width:100%}
+.bk.on{border-color:var(--accent)}
+.bk .ic{width:36px;height:36px;border-radius:10px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;font:700 15px var(--f-display);flex:none}
+.bk .nm{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bk .sub{font-size:12px;color:var(--dim)}
+.bk .v{margin-left:auto;font:600 14px var(--f-num)}
+
+.avatar{flex:none;width:36px;height:36px;border-radius:50%;border:1px solid var(--line);background:var(--surface);padding:0;overflow:hidden;display:grid;place-items:center;color:var(--dim);font:700 15px var(--f-display)}
+.avatar img{width:100%;height:100%;object-fit:cover;display:block}
+.sync.busy i{background:var(--accent)}.sync.warn i{background:var(--out)}
+.sync button{border:0;background:none;padding:0;color:var(--out);font:inherit;font-weight:600;display:inline-flex;gap:6px;align-items:center;text-decoration:underline}
+.who{display:flex;gap:12px;align-items:center}.who .avatar{width:48px;height:48px}
+.login{max-width:420px;margin:0 auto;padding-block:8vh 40px;display:grid;gap:22px}
+.login .mark{width:60px;height:60px}
+.login h1{margin:0;font:700 44px/1 var(--f-display);letter-spacing:-.035em;text-wrap:balance}
+.login .lede{margin:0;color:var(--dim);font-size:16.5px;max-width:38ch}
+.points{list-style:none;margin:0;padding:0;display:grid;gap:10px;font-size:14.5px}
+.points li{display:flex;gap:10px;align-items:baseline}
+.dot{flex:none;width:9px;height:9px;border-radius:50%;background:var(--accent);transform:translateY(-1px)}.dot.in{background:var(--in)}.dot.out{background:var(--out)}
+.auth{display:grid;gap:10px;background:var(--surface);border-radius:18px;padding:16px;box-shadow:var(--shadow)}
+.gbtn{display:flex;align-items:center;justify-content:center;gap:12px;width:100%;border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:12px;padding:13px;font-weight:700;font-size:16px}
+.gbtn svg{width:20px;height:20px;flex:none}
+.gbtn:disabled{opacity:.5;cursor:not-allowed}
+.or{display:flex;align-items:center;gap:10px;color:var(--dim);font-size:12px;text-transform:uppercase;letter-spacing:.08em}
+.or::before,.or::after{content:"";flex:1;height:1px;background:var(--line)}
+.fine{margin:0;font-size:12.5px;color:var(--dim)}
+.confirm{background:var(--out-soft);border-radius:12px;padding:12px;display:grid;gap:10px;font-size:14px}
+.confirm .r{display:flex;gap:8px}
+.toast{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);z-index:40;background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:999px;font-weight:600;font-size:14px;box-shadow:var(--shadow);max-width:calc(100% - 32px)}
+.detail-items{display:grid;gap:4px;background:var(--surface);border-radius:12px;padding:10px 12px;font-size:14px}
+.detail-items div{display:flex;justify-content:space-between;gap:10px}
+</style>
+</head>
+<body>
+
+<div class="app" id="app"></div>
+<div class="actionbar" id="actionbar">
+  <div class="inner">
+    <button class="btn in" id="btnIn" type="button"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Cash In</button>
+    <button class="btn out" id="btnOut" type="button"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14"/></svg>Cash Out</button>
+  </div>
+</div>
+<div id="layer"></div>
+
+<script src="config.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script>
+/* ---------- Product catalog (prices are typical Indian market rates in ₹; editable per entry) ---------- */
+const CATALOG = [
+  {cat:"Kirana", items:[["Rice (Basmati)",120,"kg"],["Rice (Regular)",55,"kg"],["Wheat Atta",45,"kg"],["Toor Dal",160,"kg"],["Moong Dal",130,"kg"],["Sugar",45,"kg"],["Salt",25,"kg"],["Sunflower Oil",150,"L"],["Groundnut Oil",190,"L"],["Tea Powder",500,"kg"],["Milk",60,"L"],["Bread",45,"pc"],["Eggs",7,"pc"],["Onion",40,"kg"],["Potato",35,"kg"],["Tomato",40,"kg"],["Biscuits",30,"pack"],["Masala Mix",70,"pack"]]},
+  {cat:"Tea & Snacks", items:[["Tea",15,"cup"],["Coffee",25,"cup"],["Samosa",20,"pc"],["Vada Pav",20,"pc"],["Lunch Thali",150,"plate"],["Water Bottle 1L",20,"pc"],["Water Can 20L",60,"can"],["Cold Drink",40,"pc"]]},
+  {cat:"Office", items:[["A4 Paper Ream",320,"ream"],["Pen",10,"pc"],["Notebook",60,"pc"],["Printer Ink",650,"pc"],["Stapler Pins",30,"box"],["File Folder",40,"pc"],["Courier",80,"parcel"],["Photocopy",2,"page"]]},
+  {cat:"Travel", items:[["Petrol",105,"L"],["Diesel",92,"L"],["CNG",80,"kg"],["Auto Fare",80,"trip"],["Cab Fare",250,"trip"],["Bus Ticket",40,"ticket"],["Parking",30,"visit"],["Toll",100,"pass"]]},
+  {cat:"Bills", items:[["Electricity Bill",2500,"month"],["Water Bill",400,"month"],["Mobile Recharge",299,"plan"],["Internet / Wi-Fi",699,"month"],["Gas Cylinder",900,"pc"],["Shop Rent",15000,"month"],["Maintenance",1000,"month"]]},
+  {cat:"Staff", items:[["Salary",15000,"month"],["Salary Advance",2000,"once"],["Daily Wages",600,"day"],["Overtime",200,"hour"],["Staff Bonus",1000,"once"]]},
+  {cat:"Cleaning", items:[["Floor Cleaner",120,"L"],["Phenyl",80,"L"],["Hand Wash",90,"pc"],["Garbage Bags",60,"pack"],["Broom",120,"pc"],["Tissue Roll",40,"pc"]]},
+  {cat:"Packaging", items:[["Carrier Bags",5,"pc"],["Cardboard Box",25,"pc"],["Packing Tape",45,"roll"],["Bubble Wrap",150,"roll"],["Stickers / Labels",100,"pack"]]},
+  {cat:"Repairs", items:[["Electrician",500,"visit"],["Plumber",400,"visit"],["Bulb / Tube Light",120,"pc"],["Extension Board",350,"pc"],["Hardware Items",200,"lot"]]}
+].flatMap(g=>g.items.map(([name,price,unit],i)=>({id:(g.cat+"-"+name).toLowerCase().replace(/[^a-z0-9]+/g,"-"),name,price,unit,cat:g.cat})));
+const CATS = [...new Set(CATALOG.map(p=>p.cat))];
+const IN_CATS = ["Sales","Customer Payment","Owner Capital","Loan Received","Refund","Other Income"];
+const MODES = ["Cash","UPI","Card","Bank","Cheque"];
+
+/* ---------- helpers ---------- */
+const $ = s=>document.querySelector(s);
+const uid = ()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+const inr = new Intl.NumberFormat("en-IN",{maximumFractionDigits:2,minimumFractionDigits:0});
+const money = n=>"₹"+inr.format(Math.round(n*100)/100);
+const esc = s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const dayKey = ts=>{const d=new Date(ts);return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")};
+const dayLabel = k=>{const t=dayKey(Date.now()),y=dayKey(Date.now()-864e5);if(k===t)return"Today";if(k===y)return"Yesterday";const[a,b,c]=k.split("-");return new Date(a,b-1,c).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})};
+const timeLabel = ts=>new Date(ts).toLocaleTimeString("en-IN",{hour:"numeric",minute:"2-digit"});
+const toLocalInput = ts=>{const d=new Date(ts);d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().slice(0,16)};
+
+/* ---------- state ---------- */
+function sampleState(){
+  const now=Date.now(),h=36e5,d=864e5;
+  const e=(type,amount,ago,remark,category,mode,items)=>({id:uid(),type,amount,ts:now-ago,remark,category,mode,party:"",items:items||[]});
+  const id=uid();
+  return {v:1,activeId:id,custom:[],books:[{id,name:"Sample: Shop Ledger",sample:true,created:now-3*d,entries:[
+    e("in",4800,2*h,"Counter sales","Sales","Cash"),
+    e("out",210,3*h,"Tea ×6, Samosa ×6","Tea & Snacks","Cash",[{pid:"tea-snacks-tea",name:"Tea",qty:6,unit:"cup",price:15},{pid:"tea-snacks-samosa",name:"Samosa",qty:6,unit:"pc",price:20}]),
+    e("in",2500,5*h,"Payment from Patil Traders","Customer Payment","UPI"),
+    e("out",1050,d+2*h,"Petrol ×10","Travel","UPI",[{pid:"travel-petrol",name:"Petrol",qty:10,unit:"L",price:105}]),
+    e("out",2000,d+4*h,"Salary Advance — Ramesh","Staff","Cash",[{pid:"staff-salary-advance",name:"Salary Advance",qty:1,unit:"once",price:2000}]),
+    e("in",6200,d+6*h,"Counter sales","Sales","Cash"),
+    e("out",880,2*d+h,"A4 Paper Ream ×2, Printer Ink","Office","Card",[{pid:"office-a4-paper-ream",name:"A4 Paper Ream",qty:2,unit:"ream",price:320},{pid:"office-printer-ink",name:"Printer Ink",qty:1,unit:"pc",price:240}]),
+    e("in",10000,2*d+3*h,"Opening balance","Owner Capital","Bank")
+  ]}]};
+}
+function blankBook(name){return {id:uid(),name,created:Date.now(),entries:[]}}
+function normalize(s){
+  if(!s||!Array.isArray(s.books)||!s.books.length) return null;
+  s.custom=Array.isArray(s.custom)?s.custom:[];
+  if(!s.books.find(b=>b.id===s.activeId)) s.activeId=s.books[0].id;
+  return s;
+}
+/* ---------- accounts & storage ----------
+   Sign in with Google (Google Identity Services token flow). Each user's books live in one JSON file
+   in the hidden app folder of their own Google Drive (drive.appdata scope), with a copy cached on the device. */
+const CLIENT_ID=(window.NIMBUS_CONFIG&&window.NIMBUS_CONFIG.googleClientId)||"";
+const DRIVE_SCOPE="https://www.googleapis.com/auth/drive.appdata";
+const SCOPES="openid email profile "+DRIVE_SCOPE;
+const DRIVE_FILE="nimbus-book.json";
+const store={
+  get(k){try{const v=localStorage.getItem(k);return v?JSON.parse(v):null}catch(e){return null}},
+  set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}},
+  del(k){try{localStorage.removeItem(k)}catch(e){}}
+};
+let session=store.get("nimbus-session");          // {sub,email,name,picture} or {guest:true}
+let token=store.get("nimbus-token");              // {access,exp}
+let driveFileId=null, syncState="local", saveTimer=null, pushing=null, tokenClient=null;
+const signedIn=()=>!!(session&&session.sub);
+const dataKey=()=>signedIn()?"nimbus-data-"+session.sub:"nimbus-data-guest";
+const pendKey=()=>"nimbus-pending-"+(session&&session.sub);
+let pending=signedIn()&&!!store.get(pendKey());
+function blankState(){const b=blankBook("My Book");return {v:1,activeId:b.id,custom:[],books:[b],updatedAt:0}}
+function hasRealData(s){return !!s&&(s.custom.length>0||s.books.some(b=>!b.sample&&b.entries.length))}
+let state=normalize(store.get(dataKey()))||(signedIn()?blankState():sampleState());
+
+function persistLocal(){store.set(dataKey(),state)}
+function commit(){
+  state.updatedAt=Date.now(); persistLocal(); render();
+  if(!signedIn()) return;
+  pending=true; store.set(pendKey(),true);
+  clearTimeout(saveTimer); saveTimer=setTimeout(push,1200);
+}
+const tokenValid=()=>!!(token&&token.access&&token.exp>Date.now());
+async function gfetch(url,opts={}){
+  const res=await fetch(url,{...opts,headers:{...(opts.headers||{}),Authorization:"Bearer "+token.access}});
+  if(!res.ok){const err=new Error("Google API "+res.status);err.status=res.status;throw err}
+  return res;
+}
+async function findFile(){
+  const q=encodeURIComponent("name='"+DRIVE_FILE+"' and trashed=false");
+  const r=await (await gfetch("https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&fields=files(id,modifiedTime)&q="+q)).json();
+  return r.files&&r.files[0]?r.files[0].id:null;
+}
+async function createFile(body){
+  const boundary="nimbus"+uid();
+  const meta=JSON.stringify({name:DRIVE_FILE,parents:["appDataFolder"],mimeType:"application/json"});
+  const multipart=`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${body}\r\n--${boundary}--`;
+  const r=await (await gfetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id",{method:"POST",headers:{"Content-Type":"multipart/related; boundary="+boundary},body:multipart})).json();
+  return r.id;
+}
+function failSync(e){setSync(e&&e.status===401?"reconnect":navigator.onLine===false?"offline":"error");if(e&&e.status===401){token=null;store.del("nimbus-token")}}
+async function push(){
+  if(pushing){await pushing}
+  if(!signedIn()||!pending) return;
+  if(!tokenValid()) return setSync("reconnect");
+  pushing=(async()=>{
+    const version=state.updatedAt, body=JSON.stringify(state);
+    setSync("syncing");
+    try{
+      if(!driveFileId) driveFileId=await findFile();
+      if(driveFileId) await gfetch(`https://www.googleapis.com/upload/drive/v3/files/${driveFileId}?uploadType=media`,{method:"PATCH",headers:{"Content-Type":"application/json"},body});
+      else driveFileId=await createFile(body);
+      if(state.updatedAt===version){pending=false;store.del(pendKey());setSync("synced")}
+      else {clearTimeout(saveTimer);saveTimer=setTimeout(push,400)}
+    }catch(e){failSync(e)}
+  })();
+  await pushing; pushing=null;
+}
+async function pull(){
+  if(!signedIn()) return;
+  if(!tokenValid()) return setSync("reconnect");
+  setSync("syncing");
+  try{
+    if(!driveFileId) driveFileId=await findFile();
+    if(driveFileId){
+      const remote=normalize(await (await gfetch(`https://www.googleapis.com/drive/v3/files/${driveFileId}?alt=media`)).json());
+      // Drive wins unless this device has newer changes that haven't been uploaded yet
+      if(remote&&(!pending||(remote.updatedAt||0)>(state.updatedAt||0))){state=remote;pending=false;store.del(pendKey());persistLocal();render()}
+    } else pending=true;                       // first sign-in: create the Drive file from this device's books
+    if(pending) await push(); else setSync("synced");
+  }catch(e){failSync(e)}
+}
+function setSync(s){syncState=s;renderSync()}
+
+function gisReady(){return !!(window.google&&google.accounts&&google.accounts.oauth2)}
+function signInWithGoogle(){
+  if(!CLIENT_ID){toast("Google sign-in isn't set up yet. Add the Google Client ID in Vercel.");return}
+  if(!gisReady()){toast("Google sign-in is still loading. Try again in a moment.");return}
+  if(!tokenClient) tokenClient=google.accounts.oauth2.initTokenClient({
+    client_id:CLIENT_ID, scope:SCOPES, callback:onToken,
+    error_callback:e=>toast(e&&e.type==="popup_closed"?"Sign-in was closed before it finished":"Google sign-in couldn't open. Allow pop-ups for this site and try again.")
+  });
+  tokenClient.requestAccessToken(signedIn()?{prompt:"",login_hint:session.email}:{prompt:"select_account"});
+}
+async function onToken(r){
+  if(!r||r.error){toast("Google sign-in didn't finish. Try again.");return}
+  if(!google.accounts.oauth2.hasGrantedAllScopes(r,DRIVE_SCOPE)){toast("Nimbus Book needs Google Drive access to save your books. Sign in again and allow Drive.");return}
+  token={access:r.access_token,exp:Date.now()+(Number(r.expires_in||3600)-60)*1000}; store.set("nimbus-token",token);
+  if(!signedIn()){
+    let me;
+    try{me=await (await gfetch("https://www.googleapis.com/oauth2/v3/userinfo")).json()}catch(e){toast("Couldn't read your Google profile. Try again.");return}
+    const guestState=state, wasGuest=!!(session&&session.guest);
+    session={sub:me.sub,email:me.email||"",name:me.name||me.email||"You",picture:me.picture||""}; store.set("nimbus-session",session);
+    const local=normalize(store.get(dataKey()));
+    state=local||(wasGuest&&hasRealData(guestState)?guestState:blankState());
+    if(!local&&state===guestState){pending=true;store.set(pendKey(),true);persistLocal()}
+    else pending=!!store.get(pendKey());
+    driveFileId=null; showApp(); toast("Signed in as "+(session.email||session.name));
+  }
+  await pull();
+}
+function continueAsGuest(){session={guest:true};store.set("nimbus-session",session);state=normalize(store.get(dataKey()))||sampleState();showApp()}
+function signOut(){
+  if(signedIn()) store.del(dataKey()), store.del(pendKey());
+  store.del("nimbus-token"); store.del("nimbus-session");
+  session=null; token=null; driveFileId=null; pending=false; syncState="local";
+  state=sampleState(); closeSheet(); showLogin();
+}
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&signedIn()&&!pending&&tokenValid())pull()});
+window.addEventListener("online",()=>{if(signedIn()&&pending)push()});
+
+/* ---------- derived ---------- */
+const book=()=>state.books.find(b=>b.id===state.activeId)||state.books[0];
+function totals(entries){let i=0,o=0;for(const e of entries){if(e.type==="in")i+=e.amount;else o+=e.amount}return{i,o,net:i-o}}
+
+/* ---------- view state ---------- */
+const ui={tab:"entries",q:"",type:"all",mode:"all",range:"all"};
+function filtered(b){
+  const now=new Date(),start=new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime();
+  const from=ui.range==="today"?start:ui.range==="week"?start-6*864e5:ui.range==="month"?new Date(now.getFullYear(),now.getMonth(),1).getTime():0;
+  const q=ui.q.trim().toLowerCase();
+  return b.entries.filter(e=>(ui.type==="all"||e.type===ui.type)&&(ui.mode==="all"||e.mode===ui.mode)&&e.ts>=from&&
+    (!q||[e.remark,e.category,e.party,e.mode,...(e.items||[]).map(x=>x.name)].join(" ").toLowerCase().includes(q)||String(e.amount).includes(q)));
+}
+
+/* ---------- render ---------- */
+const CLOUD_SVG=`<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M9.5 25h14a6 6 0 0 0 .9-11.93A8 8 0 0 0 9 12.2 6.5 6.5 0 0 0 9.5 25Z" fill="var(--accent)"/><path d="M12 19.5h8M12 16h5" stroke="var(--accent-ink)" stroke-width="2" stroke-linecap="round"/></svg>`;
+const G_LOGO=`<svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>`;
+function renderSync(){
+  const el=$("#sync");if(!el)return;
+  const M={local:["","Saved on this device only"],syncing:["busy","Saving to Google Drive…"],synced:["cloud","Saved to Google Drive"],
+    reconnect:["warn","Reconnect Google Drive"],offline:["warn","Offline · syncs when back"],error:["warn","Couldn't reach Drive · retry"]};
+  const s=signedIn()?syncState:"local",[c,t]=M[s]||M.local;
+  el.className="sync "+c;
+  el.innerHTML=(s==="reconnect"||s==="error")?`<button type="button" id="syncAction"><i></i>${t}</button>`:`<i></i>${t}`;
+}
+function acctButton(){
+  if(signedIn()&&session.picture) return `<button type="button" class="avatar" id="openAccount" aria-label="Account"><img src="${esc(session.picture)}" alt="" referrerpolicy="no-referrer"></button>`;
+  if(signedIn()) return `<button type="button" class="avatar" id="openAccount" aria-label="Account">${esc((session.name||"?")[0].toUpperCase())}</button>`;
+  return `<button type="button" class="avatar" id="openAccount" aria-label="Account"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg></button>`;
+}
+function showLogin(){
+  $("#actionbar").hidden=true; closeSheet();
+  $("#app").innerHTML=`<main class="login">
+    <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><path d="M9.5 25h14a6 6 0 0 0 .9-11.93A8 8 0 0 0 9 12.2 6.5 6.5 0 0 0 9.5 25Z" fill="var(--accent)"/><path d="M12 19.5h8M12 16h5" stroke="var(--accent-ink)" stroke-width="2" stroke-linecap="round"/></svg>
+    <h1>Nimbus Book</h1>
+    <p class="lede">Your business cash book. Record every rupee in and out, pick expenses from a ready product list, and keep it all in your own Google Drive.</p>
+    <ul class="points">
+      <li><span class="dot in"></span><span><b>Cash In and Cash Out</b> in two taps, with a running balance</span></li>
+      <li><span class="dot"></span><span><b>${CATALOG.length} ready products</b> for expenses, plus your own custom items</span></li>
+      <li><span class="dot out"></span><span><b>Saved to your Google Drive</b>, on every phone and computer you sign in on</span></li>
+    </ul>
+    <div class="auth">
+      <button type="button" class="gbtn" id="googleBtn" ${CLIENT_ID?"":"disabled"}>${G_LOGO}Continue with Google</button>
+      <p class="fine">${CLIENT_ID?"New here? This creates your account. Already have one? This logs you in.":"Google sign-in is being set up. You can try the app without an account for now."}</p>
+      <div class="or">or</div>
+      <button type="button" class="btn ghost" id="guestBtn">Try without an account</button>
+    </div>
+    <p class="fine">Your books go in a private Nimbus Book folder in your Google Drive. Only you can see them, and only this app can open that folder.</p>
+  </main>`;
+}
+function showApp(){closeSheet();$("#actionbar").hidden=false;render()}
+let acctUi={confirm:false};
+function openAccount(){
+  let h=`<header><h2>Account</h2><button class="x" type="button" data-close aria-label="Close">×</button></header><div class="body">`;
+  if(signedIn()){
+    h+=`<div class="who">${acctButton().replace('id="openAccount"','tabindex="-1"')}<div style="min-width:0"><b>${esc(session.name)}</b><span class="hint" style="display:block;overflow-wrap:anywhere">${esc(session.email)}</span></div></div>
+      <div class="detail-items"><div><span class="hint">Storage</span><span>Google Drive</span></div><div><span class="hint">Status</span><span class="sync" id="sync"></span></div></div>
+      <span class="hint">Your books are saved as one file in a hidden Nimbus Book folder in your Google Drive. To remove it, open Google Drive → Settings → Manage apps → Nimbus Book → Delete hidden app data.</span>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn ghost sm" id="acctSync">${tokenValid()?"Sync now":"Reconnect Google Drive"}</button><button type="button" class="btn danger sm" id="signOutBtn">Sign out</button></div>`;
+    if(acctUi.confirm) h+=`<div class="confirm"><span>Some changes haven't reached Google Drive yet. If you sign out now, they're deleted from this device.</span><div class="r"><button type="button" class="btn danger sm" id="signOutYes">Sign out anyway</button><button type="button" class="btn ghost sm" id="signOutNo">Stay signed in</button></div></div>`;
+  } else {
+    h+=`<span class="hint">You're using Nimbus Book without an account. Your books are saved only in this browser. If you clear your browser data, they're gone.</span>
+      <button type="button" class="gbtn" id="acctGoogle" ${CLIENT_ID?"":"disabled"}>${G_LOGO}Continue with Google</button>
+      <span class="hint">${CLIENT_ID?"Signing in for the first time creates your account and moves the books on this device into it.":"Google sign-in is being set up."}</span>
+      <button type="button" class="btn ghost sm" id="leaveGuest">Back to the sign-in screen</button>`;
+  }
+  h+=`</div>`;openSheet(h);renderSync();
+}
+function boot(){
+  if(!session) return showLogin();
+  showApp();
+  if(signedIn()){if(tokenValid())pull();else setSync("reconnect")}
+}
+function render(){
+  const b=book(), t=totals(b.entries), list=filtered(b).slice().sort((x,y)=>y.ts-x.ts);
+  // running balance (chronological across the whole book)
+  const run={};let acc=0;for(const e of b.entries.slice().sort((x,y)=>x.ts-y.ts)){acc+=e.type==="in"?e.amount:-e.amount;run[e.id]=acc}
+  const pct=t.i+t.o?Math.round(t.i/(t.i+t.o)*100):50;
+  let html=`<div class="top"><div class="brand">${CLOUD_SVG}Nimbus Book</div>
+    <button class="book-switch" id="openBooks" type="button" aria-label="Switch book"><span>${esc(b.name)}</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></button>${acctButton()}</div>`;
+  if(b.sample) html+=`<div class="sample"><span><b>This is a sample book.</b> The figures are examples. Add your own book from the book menu.</span><button type="button" id="clearSample">Clear sample</button></div>`;
+  html+=`<section class="balance" aria-label="Balance">
+    <div class="row"><span class="label">Net balance</span><span class="sync" id="sync"></span></div>
+    <div class="net" style="color:${t.net<0?"var(--out)":"var(--fg)"}">${t.net<0?"−":""}${money(Math.abs(t.net))}</div>
+    <div class="meter" title="Share of cash in"><i style="width:${pct}%"></i></div>
+    <div class="split"><div class="i"><span class="label">Total in</span><span class="num">${money(t.i)}</span></div><div class="o"><span class="label">Total out</span><span class="num">${money(t.o)}</span></div></div>
+  </section>
+  <div class="tabs" role="tablist"><button role="tab" type="button" data-tab="entries" aria-selected="${ui.tab==="entries"}">Entries</button><button role="tab" type="button" data-tab="reports" aria-selected="${ui.tab==="reports"}">Reports</button></div>`;
+  if(ui.tab==="entries"){
+    html+=`<div class="search"><input id="q" type="search" placeholder="Search remark, product, amount" value="${esc(ui.q)}" aria-label="Search entries"></div>
+    <div class="chips" role="group" aria-label="Filters">
+      ${[["range","all","All time"],["range","today","Today"],["range","week","7 days"],["range","month","This month"]].map(c=>chip(...c)).join("")}
+      ${[["type","in","Cash in"],["type","out","Cash out"]].map(c=>chip(...c)).join("")}
+      ${MODES.map(m=>chip("mode",m,m)).join("")}
+    </div>`;
+    if(!list.length){
+      html+=b.entries.length?`<div class="empty"><b>No entries match</b><span>Clear a filter or change the search.</span></div>`
+        :`<div class="empty"><b>No entries yet</b><span>Tap <b>Cash In</b> when money comes in and <b>Cash Out</b> when you spend. Pick products from the list, or add a custom one.</span></div>`;
+    } else {
+      let cur=null;html+=`<div>`;
+      for(const e of list){
+        const k=dayKey(e.ts);
+        if(k!==cur){if(cur)html+=`</div>`;cur=k;const dt=totals(list.filter(x=>dayKey(x.ts)===k));html+=`<div class="day"><span>${dayLabel(k)}</span><span class="num">${dt.net>=0?"+":"−"}${money(Math.abs(dt.net))}</span></div><div class="entries">`}
+        html+=`<button type="button" class="entry ${e.type}" data-entry="${e.id}">
+          <span class="t">${esc(e.remark||e.category||(e.type==="in"?"Cash in":"Cash out"))}</span>
+          <span class="amt">${e.type==="in"?"+":"−"}${money(e.amount)}</span>
+          <span class="meta"><span>${timeLabel(e.ts)}</span><span class="tag">${esc(e.mode)}</span>${e.category?`<span class="tag">${esc(e.category)}</span>`:""}${e.party?`<span>${esc(e.party)}</span>`:""}</span>
+          <span class="bal num">Bal ${run[e.id]<0?"−":""}${money(Math.abs(run[e.id]))}</span></button>`;
+      }
+      html+=`</div></div>`;
+    }
+  } else html+=reports(b);
+  $("#app").innerHTML=html; renderSync();
+}
+function chip(group,val,label){const on=ui[group]===val;return `<button type="button" class="chip" data-f="${group}" data-v="${esc(val)}" aria-pressed="${on}">${esc(label)}</button>`}
+function reports(b){
+  const outs={},ins={},prods={};
+  for(const e of b.entries){
+    const m=e.type==="in"?ins:outs;m[e.category||"Other"]=(m[e.category||"Other"]||0)+e.amount;
+    if(e.type==="out")for(const it of e.items||[]){const p=prods[it.name]||(prods[it.name]={q:0,amt:0,unit:it.unit});p.q+=it.qty;p.amt+=it.qty*it.price}
+  }
+  const bars=(m,cls)=>{const arr=Object.entries(m).sort((a,b)=>b[1]-a[1]);const max=arr[0]?arr[0][1]:1;
+    return arr.length?arr.map(([k,v])=>`<div class="bar ${cls}"><span>${esc(k)}</span><span class="num">${money(v)}</span><span class="track"><i style="width:${Math.max(3,v/max*100)}%"></i></span></div>`).join(""):`<span class="hint">Nothing here yet.</span>`};
+  const top=Object.entries(prods).sort((a,b)=>b[1].amt-a[1].amt).slice(0,8);
+  const t=totals(b.entries);
+  return `<div class="rep"><h3>Spending by category</h3>${bars(outs,"")}</div>
+  <div class="rep"><h3>Money in by source</h3>${bars(ins,"inb")}</div>
+  <div class="rep"><h3>Top products bought</h3>${top.length?top.map(([n,p])=>`<div class="bar"><span>${esc(n)} <span class="hint">· ${+p.q.toFixed(2)} ${esc(p.unit)}</span></span><span class="num">${money(p.amt)}</span></div>`).join(""):`<span class="hint">Products you pick in Cash Out show up here.</span>`}</div>
+  <div class="rep"><h3>Export</h3><span class="hint">${b.entries.length} entries · net ${t.net<0?"−":""}${money(Math.abs(t.net))}. The CSV opens in Excel and Google Sheets.</span>
+    <div class="actions"><button type="button" class="btn primary sm" id="exportCsv">Download CSV</button><button type="button" class="btn ghost sm" id="copyCsv">Copy as CSV</button></div></div>`;
+}
+
+/* ---------- toast ---------- */
+let toastT;function toast(msg){let el=$("#toast");if(!el){el=document.createElement("div");el.id="toast";el.className="toast";el.setAttribute("role","status");document.body.appendChild(el)}el.textContent=msg;el.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>el.hidden=true,2400)}
+
+/* ---------- sheets ---------- */
+function openSheet(html,cls=""){const open=$("#layer .sheet");if(open){open.className="sheet still "+cls;open.innerHTML=html;const f=open.querySelector("#cName,#bkName");if(f)f.focus();return}$("#layer").innerHTML=`<div class="scrim" id="scrim"><div class="sheet ${cls}" role="dialog" aria-modal="true">${html}</div></div>`;document.body.style.overflow="hidden";const f=$("#layer [autofocus]");if(f)setTimeout(()=>f.focus(),60)}
+function closeSheet(){$("#layer").innerHTML="";document.body.style.overflow=""}
+
+/* entry form (new or edit) */
+let draft=null;
+function openEntry(type,existing){
+  const e=existing||{};
+  draft={id:e.id||null,type,amount:e.amount||"",ts:e.ts||Date.now(),remark:e.remark||"",category:e.category||(type==="in"?"Sales":""),mode:e.mode||"Cash",party:e.party||"",
+    items:(e.items||[]).map(x=>({...x})),cat:"All",pq:"",manualAmount:!!(existing&&!(e.items||[]).length),confirmDel:false,customOpen:false};
+  drawEntry();
+}
+function allProducts(){return [...state.custom.map(p=>({...p,mine:true})),...CATALOG]}
+function itemsTotal(){return draft.items.reduce((s,x)=>s+(+x.qty||0)*(+x.price||0),0)}
+function autoRemark(){return draft.items.map(x=>x.name+(+x.qty!==1?" ×"+(+x.qty):"")).join(", ")}
+function drawEntry(){
+  const d=draft,isOut=d.type==="out";
+  const prods=allProducts().filter(p=>(d.cat==="All"||(d.cat==="Mine"?p.mine:p.cat===d.cat))&&(!d.pq||p.name.toLowerCase().includes(d.pq.toLowerCase())));
+  const qtyOf=id=>{const it=d.items.find(x=>x.pid===id);return it?it.qty:0};
+  const amount=d.items.length&&!d.manualAmount?itemsTotal():d.amount;
+  let h=`<header><h2>${d.id?"Edit entry":isOut?"Cash Out":"Cash In"}</h2><button class="x" type="button" data-close aria-label="Close">×</button></header><div class="body">`;
+  if(isOut){
+    h+=`<div class="picker">
+      <div class="picker-head"><span class="flabel">Pick products</span><button type="button" class="btn ghost sm" id="customBtn">+ Custom</button></div>
+      <input id="pq" type="search" placeholder="Search ${CATALOG.length}+ products" value="${esc(d.pq)}" aria-label="Search products" style="border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:9px 11px">
+      <div class="cats">${["All",...(state.custom.length?["Mine"]:[]),...CATS].map(c=>`<button type="button" class="chip" data-pcat="${esc(c)}" aria-pressed="${d.cat===c}">${c==="Mine"?"My products":esc(c)}</button>`).join("")}</div>
+      ${d.customOpen?customForm():""}
+      <div class="prods">${prods.map(p=>{const q=qtyOf(p.id);return `<button type="button" class="prod${q?" on":""}" data-pid="${esc(p.id)}">${q?`<span class="q">${+q}</span>`:""}${p.mine?`<span class="mine">Custom</span>`:""}<span class="n">${esc(p.name)}</span><span class="p num">${money(p.price)}/${esc(p.unit)}</span></button>`}).join("")}
+        <button type="button" class="prod custom" id="customTile">+ Add custom item</button></div>
+      ${d.items.length?`<div class="cart">${d.items.map((x,i)=>`<div class="line"><span class="nm">${esc(x.name)}</span>
+        <span class="step"><button type="button" data-dec="${i}" aria-label="Less">−</button><input inputmode="decimal" data-qty="${i}" value="${+x.qty}" aria-label="Quantity of ${esc(x.name)}"><button type="button" data-inc="${i}" aria-label="More">+</button></span>
+        <input class="pr" inputmode="decimal" data-price="${i}" value="${+x.price}" aria-label="Price of ${esc(x.name)}">
+        <button type="button" class="rm" data-rm="${i}" aria-label="Remove ${esc(x.name)}">×</button></div>`).join("")}
+        <div class="cart-total"><span>${d.items.length} item${d.items.length>1?"s":""}</span><span class="num" id="cartTotal">${money(itemsTotal())}</span></div></div>`
+      :`<span class="hint">Tap a product to add it, then tap again to add more. Change the quantity or price below the list. Use <b>+ Custom</b> for anything not listed.</span>`}
+    </div>`;
+  }
+  h+=`<div class="field"><label for="amt">Amount (₹)</label><input id="amt" class="amount-in" inputmode="decimal" placeholder="0" value="${amount===""?"":+(+amount).toFixed(2)}" ${!isOut||!d.items.length?"autofocus":""}>
+    ${isOut&&d.items.length?`<span class="hint">${d.manualAmount?"You changed the amount by hand.":"Calculated from the products above."}</span>`:""}</div>
+  <div class="field"><span class="flabel">Payment mode</span><div class="seg">${MODES.map(m=>`<button type="button" data-mode="${m}" aria-pressed="${d.mode===m}">${m}</button>`).join("")}</div></div>
+  <div class="field"><label for="rem">Remark</label><input id="rem" placeholder="${isOut?"Filled in from products, or type your own":"e.g. Counter sales"}" value="${esc(d.remark||(isOut?autoRemark():""))}"></div>
+  <div class="grid2">
+    <div class="field"><label for="cat">Category</label>${isOut
+      ?`<select id="cat"><option value="">Auto</option>${[...new Set([...CATS,"Other",...state.custom.map(c=>c.cat)])].map(c=>`<option ${d.category===c?"selected":""}>${esc(c)}</option>`).join("")}</select>`
+      :`<select id="cat">${IN_CATS.map(c=>`<option ${d.category===c?"selected":""}>${c}</option>`).join("")}</select>`}</div>
+    <div class="field"><label for="dt">Date &amp; time</label><input id="dt" type="datetime-local" value="${toLocalInput(d.ts)}"></div>
+  </div>
+  <div class="field"><label for="party">${isOut?"Paid to (optional)":"Received from (optional)"}</label><input id="party" placeholder="${isOut?"Supplier or person":"Customer or person"}" value="${esc(d.party)}"></div>`;
+  if(d.id&&d.confirmDel) h+=`<div class="confirm"><span>Delete this entry? This can't be undone.</span><div class="r"><button type="button" class="btn danger sm" id="delYes">Delete entry</button><button type="button" class="btn ghost sm" id="delNo">Keep it</button></div></div>`;
+  h+=`</div><footer>${d.id&&!d.confirmDel?`<button type="button" class="btn danger" id="delEntry" style="flex:0 0 auto">Delete</button>`:""}<button type="button" class="btn ${isOut?"out":"in"}" id="saveEntry">${d.id?"Save changes":isOut?"Save cash out":"Save cash in"}</button></footer>`;
+  const scroll=$("#layer .body")?.scrollTop||0, prodScroll=$("#layer .prods")?.scrollTop||0;
+  openSheet(h,isOut?"out-mode":"in-mode");
+  const bd=$("#layer .body");if(bd)bd.scrollTop=scroll;const ps=$("#layer .prods");if(ps)ps.scrollTop=prodScroll;
+}
+function customForm(){return `<div class="picker" style="background:var(--accent-soft)">
+  <span class="flabel">New custom item</span>
+  <div class="field"><label for="cName">Name</label><input id="cName" placeholder="e.g. Shop banner printing" autofocus></div>
+  <div class="grid2"><div class="field"><label for="cPrice">Price (₹)</label><input id="cPrice" inputmode="decimal" placeholder="0"></div>
+  <div class="field"><label for="cUnit">Unit</label><input id="cUnit" placeholder="pc" value="pc"></div></div>
+  <div class="field"><label for="cCat">Category</label><select id="cCat">${[...CATS,"Other"].map(c=>`<option>${c}</option>`).join("")}</select></div>
+  <label style="display:flex;gap:8px;align-items:center;font-size:14px"><input type="checkbox" id="cSave" checked> Save to my product list for next time</label>
+  <div style="display:flex;gap:8px"><button type="button" class="btn primary sm" id="cAdd">Add item</button><button type="button" class="btn ghost sm" id="cCancel">Cancel</button></div></div>`}
+function readDraftFields(){
+  const g=id=>$("#"+id);if(!g("amt"))return;
+  const a=parseFloat(g("amt").value);draft.amount=isNaN(a)?"":a;
+  const r=g("rem").value;draft.remark=r===autoRemark()?"":r;
+  draft.category=g("cat").value;draft.party=g("party").value.trim();
+  const t=new Date(g("dt").value).getTime();if(!isNaN(t))draft.ts=t;
+}
+function saveEntry(){
+  readDraftFields();const d=draft,isOut=d.type==="out";
+  const amount=d.items.length&&!d.manualAmount?itemsTotal():+d.amount;
+  if(!(amount>0)){toast("Enter an amount above ₹0");$("#amt")?.focus();return}
+  let cat=d.category;
+  if(isOut&&!cat){const c={};for(const x of d.items){const p=allProducts().find(p=>p.id===x.pid);const k=p?p.cat:"Other";c[k]=(c[k]||0)+x.qty*x.price}cat=Object.entries(c).sort((a,b)=>b[1]-a[1])[0]?.[0]||"Other"}
+  const entry={id:d.id||uid(),type:d.type,amount:Math.round(amount*100)/100,ts:d.ts,remark:(d.remark||(isOut?autoRemark():"")).trim(),category:cat,mode:d.mode,party:d.party,
+    items:d.items.map(x=>({pid:x.pid,name:x.name,qty:+x.qty||0,unit:x.unit,price:+x.price||0})).filter(x=>x.qty>0)};
+  const b=book();const i=b.entries.findIndex(x=>x.id===entry.id);
+  if(i>=0)b.entries[i]=entry;else b.entries.push(entry);
+  closeSheet();commit();toast(d.id?"Entry updated":isOut?"Cash out saved":"Cash in saved");
+}
+function addProduct(p){
+  const it=draft.items.find(x=>x.pid===p.id);
+  if(it)it.qty=+it.qty+1;else draft.items.push({pid:p.id,name:p.name,qty:1,unit:p.unit,price:p.price});
+  draft.manualAmount=false;
+}
+
+/* books sheet */
+let booksUi={adding:false,renaming:null,confirmDel:null};
+function openBooks(){
+  const rows=state.books.map(b=>{const t=totals(b.entries);return `<button type="button" class="bk${b.id===state.activeId?" on":""}" data-book="${b.id}"><span class="ic">${esc((b.name.replace(/^Sample:\s*/,"")[0]||"B").toUpperCase())}</span>
+    <span style="min-width:0"><span class="nm" style="display:block">${esc(b.name)}</span><span class="sub">${b.entries.length} entries${b.sample?" · sample":""}</span></span>
+    <span class="v num" style="color:${t.net<0?"var(--out)":"var(--in)"}">${t.net<0?"−":""}${money(Math.abs(t.net))}</span></button>`}).join("");
+  const cur=book();
+  let h=`<header><h2>Your books</h2><button class="x" type="button" data-close aria-label="Close">×</button></header><div class="body">
+    <span class="hint">Keep a separate book for each shop, project, or person. Each book has its own balance.</span>
+    <div class="books">${rows}</div>`;
+  if(booksUi.adding||booksUi.renaming) h+=`<div class="field"><label for="bkName">${booksUi.renaming?"Rename book":"New book name"}</label><input id="bkName" placeholder="e.g. Main Shop, Site Expenses, Home" value="${booksUi.renaming?esc(cur.name):""}" autofocus></div>
+    <div style="display:flex;gap:8px"><button type="button" class="btn primary sm" id="bkSave">${booksUi.renaming?"Rename":"Create book"}</button><button type="button" class="btn ghost sm" id="bkCancel">Cancel</button></div>`;
+  else h+=`<div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn primary sm" id="bkAdd">+ New book</button><button type="button" class="btn ghost sm" id="bkRename">Rename “${esc(cur.name)}”</button>${state.books.length>1?`<button type="button" class="btn danger sm" id="bkDel">Delete this book</button>`:""}</div>`;
+  if(booksUi.confirmDel) h+=`<div class="confirm"><span>Delete “${esc(cur.name)}” and its ${cur.entries.length} entries? This can't be undone.</span><div class="r"><button type="button" class="btn danger sm" id="bkDelYes">Delete book</button><button type="button" class="btn ghost sm" id="bkDelNo">Keep it</button></div></div>`;
+  h+=`</div>`;
+  openSheet(h);
+}
+
+/* entry detail */
+function openDetail(id){
+  const e=book().entries.find(x=>x.id===id);if(!e)return;
+  const h=`<header><h2 style="color:${e.type==="in"?"var(--in)":"var(--out)"}">${e.type==="in"?"+":"−"}${money(e.amount)}</h2><button class="x" type="button" data-close aria-label="Close">×</button></header>
+  <div class="body"><div class="detail-items">
+    <div><span class="hint">Remark</span><span>${esc(e.remark||"—")}</span></div>
+    <div><span class="hint">Date</span><span>${dayLabel(dayKey(e.ts))}, ${timeLabel(e.ts)}</span></div>
+    <div><span class="hint">Mode</span><span>${esc(e.mode)}</span></div>
+    <div><span class="hint">Category</span><span>${esc(e.category||"—")}</span></div>
+    ${e.party?`<div><span class="hint">${e.type==="in"?"From":"Paid to"}</span><span>${esc(e.party)}</span></div>`:""}
+  </div>
+  ${e.items&&e.items.length?`<div class="detail-items"><span class="flabel">Products</span>${e.items.map(x=>`<div><span>${esc(x.name)} <span class="hint">${+x.qty} ${esc(x.unit)} × ${money(x.price)}</span></span><span class="num">${money(x.qty*x.price)}</span></div>`).join("")}</div>`:""}
+  </div><footer><button type="button" class="btn ghost" id="editEntry" data-id="${e.id}">Edit entry</button></footer>`;
+  openSheet(h);
+}
+
+/* ---------- CSV ---------- */
+function csv(){
+  const b=book(),rows=[["Date","Time","Type","Amount","Mode","Category","Remark","Party","Products","Balance"]];let acc=0;
+  for(const e of b.entries.slice().sort((x,y)=>x.ts-y.ts)){acc+=e.type==="in"?e.amount:-e.amount;
+    rows.push([dayKey(e.ts),timeLabel(e.ts),e.type==="in"?"Cash In":"Cash Out",e.amount,e.mode,e.category,e.remark,e.party,(e.items||[]).map(x=>`${x.name} ${x.qty}${x.unit}@${x.price}`).join("; "),Math.round(acc*100)/100])}
+  return rows.map(r=>r.map(v=>{v=String(v??"");return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v}).join(",")).join("\n");
+}
+
+/* ---------- events ---------- */
+document.addEventListener("click",async ev=>{
+  const t=ev.target.closest("button,[data-close],#scrim");if(!t)return;
+  if(t.id==="scrim"&&ev.target===t){closeSheet();return}
+  if(t.hasAttribute("data-close")){closeSheet();return}
+  if(t.id==="googleBtn"||t.id==="acctGoogle")return signInWithGoogle();
+  if(t.id==="guestBtn")return continueAsGuest();
+  if(t.id==="openAccount"){acctUi.confirm=false;return openAccount()}
+  if(t.id==="syncAction"||t.id==="acctSync"){if(!tokenValid())return signInWithGoogle();await pull();if($("#acctSync"))openAccount();return}
+  if(t.id==="signOutBtn"){if(pending){acctUi.confirm=true;return openAccount()}return signOut()}
+  if(t.id==="signOutYes")return signOut();
+  if(t.id==="signOutNo"){acctUi.confirm=false;return openAccount()}
+  if(t.id==="leaveGuest"){store.del("nimbus-session");session=null;showLogin();return}
+  if(t.id==="btnIn")return openEntry("in");
+  if(t.id==="btnOut")return openEntry("out");
+  if(t.id==="openBooks"){booksUi={adding:false,renaming:null,confirmDel:null};return openBooks()}
+  if(t.id==="clearSample"){const b=book();b.entries=[];b.name="My Book";delete b.sample;commit();toast("Sample cleared");return}
+  if(t.dataset.tab){ui.tab=t.dataset.tab;return render()}
+  if(t.dataset.f){ui[t.dataset.f]=ui[t.dataset.f]===t.dataset.v?"all":t.dataset.v;return render()}
+  if(t.dataset.entry)return openDetail(t.dataset.entry);
+  if(t.id==="editEntry"){const e=book().entries.find(x=>x.id===t.dataset.id);return openEntry(e.type,e)}
+  if(t.id==="exportCsv"){
+    const name=book().name.replace(/[^\w\- ]+/g,"").trim()||"nimbus-book";
+    try{const url=URL.createObjectURL(new Blob(["\ufeff"+csv()],{type:"text/csv;charset=utf-8"}));const a=document.createElement("a");a.href=url;a.download=name+".csv";document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);toast("CSV downloaded")}catch(e){toast("Couldn't download. Use Copy as CSV.")}
+    return}
+  if(t.id==="copyCsv"){try{await navigator.clipboard.writeText(csv());toast("CSV copied")}catch(e){toast("Copy isn't allowed here")}return}
+  // entry sheet
+  if(draft&&$("#amt")){
+    if(t.dataset.mode){readDraftFields();draft.mode=t.dataset.mode;return drawEntry()}
+    if(t.dataset.pcat){readDraftFields();draft.cat=t.dataset.pcat;return drawEntry()}
+    if(t.dataset.pid){readDraftFields();const p=allProducts().find(p=>p.id===t.dataset.pid);if(p)addProduct(p);return drawEntry()}
+    if(t.dataset.inc){readDraftFields();const it=draft.items[+t.dataset.inc];it.qty=+it.qty+1;draft.manualAmount=false;return drawEntry()}
+    if(t.dataset.dec){readDraftFields();const i=+t.dataset.dec,it=draft.items[i];it.qty=+it.qty-1;if(it.qty<=0)draft.items.splice(i,1);draft.manualAmount=false;return drawEntry()}
+    if(t.dataset.rm){readDraftFields();draft.items.splice(+t.dataset.rm,1);draft.manualAmount=false;return drawEntry()}
+    if(t.id==="customBtn"||t.id==="customTile"){readDraftFields();draft.customOpen=true;$("#layer .body")&&($("#layer .body").scrollTop=0);return drawEntry()}
+    if(t.id==="cCancel"){readDraftFields();draft.customOpen=false;return drawEntry()}
+    if(t.id==="cAdd"){
+      const name=$("#cName").value.trim(),price=parseFloat($("#cPrice").value),unit=$("#cUnit").value.trim()||"pc",cat=$("#cCat").value,keep=$("#cSave").checked;
+      if(!name){toast("Give the item a name");$("#cName").focus();return}
+      if(!(price>=0)){toast("Enter a price (0 is fine)");$("#cPrice").focus();return}
+      readDraftFields();
+      const p={id:"c-"+uid(),name,price,unit,cat};
+      if(keep){state.custom.unshift(p);persistLocal();commit()}
+      addProduct(p);draft.customOpen=false;toast(keep?"Added and saved to My products":"Added to this entry");return drawEntry()}
+    if(t.id==="saveEntry")return saveEntry();
+    if(t.id==="delEntry"){readDraftFields();draft.confirmDel=true;return drawEntry()}
+    if(t.id==="delNo"){readDraftFields();draft.confirmDel=false;return drawEntry()}
+    if(t.id==="delYes"){const b=book();b.entries=b.entries.filter(x=>x.id!==draft.id);closeSheet();commit();toast("Entry deleted");return}
+  }
+  // books sheet
+  if(t.dataset.book){state.activeId=t.dataset.book;closeSheet();commit();return}
+  if(t.id==="bkAdd"){booksUi.adding=true;return openBooks()}
+  if(t.id==="bkRename"){booksUi.renaming=state.activeId;return openBooks()}
+  if(t.id==="bkCancel"){booksUi={adding:false,renaming:null,confirmDel:null};return openBooks()}
+  if(t.id==="bkSave"){const n=$("#bkName").value.trim();if(!n){toast("Give the book a name");return}
+    if(booksUi.renaming){const b=book();b.name=n;delete b.sample}else{const nb=blankBook(n);state.books.push(nb);state.activeId=nb.id}
+    booksUi={adding:false,renaming:null,confirmDel:null};closeSheet();commit();toast("Saved “"+n+"”");return}
+  if(t.id==="bkDel"){booksUi.confirmDel=state.activeId;return openBooks()}
+  if(t.id==="bkDelNo"){booksUi.confirmDel=null;return openBooks()}
+  if(t.id==="bkDelYes"){state.books=state.books.filter(b=>b.id!==state.activeId);state.activeId=state.books[0].id;booksUi={adding:false,renaming:null,confirmDel:null};closeSheet();commit();toast("Book deleted");return}
+});
+document.addEventListener("input",ev=>{
+  const t=ev.target;
+  if(t.id==="q"){ui.q=t.value;const pos=t.selectionStart;render();const q=$("#q");q.focus();try{q.setSelectionRange(pos,pos)}catch(e){}return}
+  if(!draft)return;
+  if(t.id==="pq"){readDraftFields();draft.pq=t.value;const pos=t.selectionStart;drawEntry();const q=$("#pq");q.focus();try{q.setSelectionRange(pos,pos)}catch(e){}return}
+  if(t.dataset.qty!==undefined||t.dataset.price!==undefined){
+    const i=+(t.dataset.qty??t.dataset.price),it=draft.items[i],v=parseFloat(t.value);
+    if(t.dataset.qty!==undefined)it.qty=isNaN(v)?0:v;else it.price=isNaN(v)?0:v;
+    draft.manualAmount=false;const tot=itemsTotal();$("#cartTotal").textContent=money(tot);$("#amt").value=+tot.toFixed(2);return}
+  if(t.id==="amt"&&draft.items.length){draft.manualAmount=true}
+});
+document.addEventListener("keydown",ev=>{
+  if(ev.key==="Escape"&&$("#scrim"))closeSheet();
+  if(ev.key==="Enter"&&ev.target.id==="bkName")$("#bkSave")?.click();
+  if(ev.key==="Enter"&&["cName","cPrice","cUnit"].includes(ev.target.id)){ev.preventDefault();$("#cAdd")?.click()}
+});
+
+boot();
+</script>
+</body>
+</html>
