@@ -21,6 +21,24 @@ The app uses the **Nimbus System** logo. `brand/nimbus-system-logo-original.png`
 
 Open the latest release: **https://github.com/aniketpitre/nimbus-book/releases/latest**. Download the `NimbusBook-x.y.z.apk` file and open it. If Android asks, allow your browser or Files app to install unknown apps.
 
+### "Harmful app" / Play Protect warning
+
+Google Play Protect warns about apps installed from outside the Play Store whose developer it doesn't know yet. The warning isn't about anything in the code, and there's no legitimate code-level way to switch it off. These are the ways to remove it:
+
+1. **Publish through Google Play** (best). Create a Google Play developer account (one-time US$25), upload the app, and share it through the **Internal testing** track (up to 100 testers by email). Testers install it from the Play Store with no warning.
+2. **Ask Google to review the APK.** If Play Protect blocks it, use Google's "Play Protect appeals" form to submit the APK for analysis. A clean app is usually cleared.
+3. **For your own testing**, tap *More details → Install anyway* on the warning.
+
+Things in this project that keep the app low-risk: it asks for **no permissions except Internet**, which Android's WebView needs to load the app's own pages (the app makes no network requests). It targets the current Android SDK (35) and is a signed release build, not a debug build. Before going on the Play Store, replace the committed test signing key with a private one (see *Signing* below).
+
+## Tests
+
+`npm test` runs about 140 browser checks against the built app:
+- every screen and feature, plus input validation, filters, books, products, reports, CSV, backup/restore/erase, 1.0.0 upgrade, damaged data, layout at 360–768 px, dark mode and a 3,000-entry book
+- the app running on **Capacitor's real Android bridge** (`native-bridge.js`) with a simulated phone behind it: back button, data file, daily backups, share menu and failure cases
+
+On GitHub, `.github/workflows/tests.yml` runs those tests on every push. It then builds the APK and runs `e2e/android.e2e.mjs` on an **Android 14 emulator**: the hardware back key, files written on the device, the real share menu, and data surviving force-stop and wiped web storage. A release is only built after all of this passes.
+
 ## How it's built
 
 | Path | What it is |

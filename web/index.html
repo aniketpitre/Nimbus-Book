@@ -206,6 +206,7 @@ button{cursor:pointer}
 .prow .num{font-weight:600;white-space:nowrap}
 .prow.off{opacity:.55}
 .search .btn{flex:none}
+.btn.more{width:100%;margin-top:12px}
 .confirm{background:var(--out-soft);border-radius:12px;padding:12px;display:grid;gap:10px;font-size:14px}
 .confirm .r{display:flex;gap:8px}
 .toast{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);z-index:40;background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:999px;font-weight:600;font-size:14px;box-shadow:var(--shadow);max-width:calc(100% - 32px)}
@@ -224,6 +225,7 @@ button{cursor:pointer}
 </div>
 <div id="layer"></div>
 
+<script src="vendor/capacitor.js"></script>
 <script>
 /* ---------- Product catalog (prices are typical Indian market rates in ₹; editable per entry) ---------- */
 const CATALOG = [
@@ -249,11 +251,12 @@ const money = n=>"₹"+inr.format(Math.round(n*100)/100);
 const esc = s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const dayKey = ts=>{const d=new Date(ts);return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")};
 const dayLabel = k=>{const t=dayKey(Date.now()),y=dayKey(Date.now()-864e5);if(k===t)return"Today";if(k===y)return"Yesterday";const[a,b,c]=k.split("-");return new Date(a,b-1,c).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})};
-const timeLabel = ts=>new Date(ts).toLocaleTimeString("en-IN",{hour:"numeric",minute:"2-digit"});
+const timeFmt = new Intl.DateTimeFormat("en-IN",{hour:"numeric",minute:"2-digit"});
+const timeLabel = ts=>timeFmt.format(ts);
 const toLocalInput = ts=>{const d=new Date(ts);d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().slice(0,16)};
 
 /* ---------- state ---------- */
-const APP_VERSION="1.2.1";
+const APP_VERSION="1.2.2";
 function blankBook(name){return {id:uid(),name,created:Date.now(),entries:[]}}
 // v1.0.0 shipped with a sample book; strip its example entries but keep anything the user added to it.
 const SAMPLE_SIGS=new Set(["Counter sales|4800","Tea ×6, Samosa ×6|210","Payment from Patil Traders|2500","Petrol ×10|1050","Salary Advance — Ramesh|2000","Counter sales|6200","A4 Paper Ream ×2, Printer Ink|880","Opening balance|10000"]);
@@ -276,11 +279,21 @@ function normalize(s){
   if(!s.books.find(b=>b.id===s.activeId)) s.activeId=s.books[0].id;
   return s;
 }
-/* ---------- native (Android app via Capacitor); falls back to the browser ---------- */
-const Cap=window.Capacitor;
+/* ---------- native (Android app via Capacitor); falls back to the browser ----------
+   vendor/capacitor.js (Capacitor core) provides registerPlugin; the bridge Android injects
+   into the WebView does not, so without it no plugin call ever reaches the phone. */
+const CapCore=window.capacitorExports||null;
+const Cap=(CapCore&&CapCore.Capacitor)||window.Capacitor||null;
 const isNative=!!(Cap&&Cap.isNativePlatform&&Cap.isNativePlatform());
 const plugins={};
-const plug=n=>isNative&&Cap.registerPlugin?(plugins[n]||(plugins[n]=Cap.registerPlugin(n))):null;
+function plug(n){
+  if(!isNative) return null;
+  if(!plugins[n]){
+    if(!CapCore||!CapCore.registerPlugin){console.error("Capacitor core missing: cannot reach native plugin "+n);return null}
+    plugins[n]=CapCore.registerPlugin(n);
+  }
+  return plugins[n];
+}
 async function saveFile(name,text,mime){
   if(isNative){
     const w=await plug("Filesystem").writeFile({path:name,data:text,directory:"CACHE",encoding:"utf8"});
@@ -292,8 +305,22 @@ async function saveFile(name,text,mime){
   const a=document.createElement("a");a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();
   setTimeout(()=>URL.revokeObjectURL(url),2000);
 }
+// Android back button: close the open panel, then go back to Entries, then "press again to exit".
+let lastBackAt=0;
+function handleBack(){
+  if($("#scrim")){lastBackAt=0;closeSheet();return "closed-sheet"}
+  if(state&&ui.tab!=="entries"){lastBackAt=0;ui.tab="entries";render();return "entries-tab"}
+  const now=Date.now();
+  if(now-lastBackAt<2000){lastBackAt=0;plug("App").exitApp();return "exit"}
+  lastBackAt=now;toast("Press back again to exit");return "confirm-exit";
+}
 if(isNative){
-  try{plug("App").addListener("backButton",()=>{if($("#scrim"))closeSheet();else if(ui.tab!=="entries"){ui.tab="entries";render()}else plug("App").exitApp()})}catch(e){}
+  const App=plug("App");
+  if(App){
+    Promise.resolve(App.addListener("backButton",handleBack)).catch(e=>console.error("backButton listener failed",e));
+    // save the data file straight away when the app goes to the background
+    Promise.resolve(App.addListener("pause",()=>{clearTimeout(fileTimer);writeDataFile()})).catch(()=>{});
+  }
 }
 
 /* ---------- storage (fully offline: everything stays on this phone) ----------
@@ -352,7 +379,8 @@ const book=()=>state.books.find(b=>b.id===state.activeId)||state.books[0];
 function totals(entries){let i=0,o=0;for(const e of entries){if(e.type==="in")i+=e.amount;else o+=e.amount}return{i,o,net:i-o}}
 
 /* ---------- view state ---------- */
-const ui={tab:"entries",q:"",type:"all",mode:"all",range:"all"};
+const PAGE=200;
+const ui={tab:"entries",q:"",type:"all",mode:"all",range:"all",limit:PAGE};
 function filtered(b){
   const now=new Date(),start=new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime();
   const from=ui.range==="today"?start:ui.range==="week"?start-6*864e5:ui.range==="month"?new Date(now.getFullYear(),now.getMonth(),1).getTime():0;
@@ -479,7 +507,9 @@ async function openSettings(){
   if(isNative&&autos===null){setUi.autos=await listAutoBackups();if($("#bizName"))openSettings()}
 }
 function render(){
-  const b=book(), t=totals(b.entries), list=filtered(b).slice().sort((x,y)=>y.ts-x.ts);
+  const b=book(), t=totals(b.entries), order=new Map(b.entries.map((e,i)=>[e.id,i]));
+  // newest first; entries with the same time keep the order they were added in
+  const list=filtered(b).slice().sort((x,y)=>(y.ts-x.ts)||(order.get(y.id)-order.get(x.id)));
   // running balance (chronological across the whole book)
   const run={};let acc=0;for(const e of b.entries.slice().sort((x,y)=>x.ts-y.ts)){acc+=e.type==="in"?e.amount:-e.amount;run[e.id]=acc}
   const pct=t.i+t.o?Math.round(t.i/(t.i+t.o)*100):50;
@@ -503,10 +533,13 @@ function render(){
       html+=b.entries.length?`<div class="empty"><b>No entries match</b><span>Clear a filter or change the search.</span></div>`
         :`<div class="empty"><b>No entries yet</b><span>Tap <b>Cash In</b> when money comes in and <b>Cash Out</b> when you spend. Pick products from the list, or add a custom one.</span></div>`;
     } else {
+      // day totals in one pass; draw the newest ui.limit entries (big books stay fast)
+      const dayNet=new Map();for(const e of list){const k=dayKey(e.ts);dayNet.set(k,(dayNet.get(k)||0)+(e.type==="in"?e.amount:-e.amount))}
+      const shown=list.slice(0,ui.limit);
       let cur=null;html+=`<div>`;
-      for(const e of list){
+      for(const e of shown){
         const k=dayKey(e.ts);
-        if(k!==cur){if(cur)html+=`</div>`;cur=k;const dt=totals(list.filter(x=>dayKey(x.ts)===k));html+=`<div class="day"><span>${dayLabel(k)}</span><span class="num">${dt.net>=0?"+":"−"}${money(Math.abs(dt.net))}</span></div><div class="entries">`}
+        if(k!==cur){if(cur)html+=`</div>`;cur=k;const dn=dayNet.get(k);html+=`<div class="day"><span>${dayLabel(k)}</span><span class="num">${dn>=0?"+":"−"}${money(Math.abs(dn))}</span></div><div class="entries">`}
         html+=`<button type="button" class="entry ${e.type}" data-entry="${e.id}">
           <span class="t">${esc(e.remark||e.category||(e.type==="in"?"Cash in":"Cash out"))}</span>
           <span class="amt">${e.type==="in"?"+":"−"}${money(e.amount)}</span>
@@ -514,6 +547,7 @@ function render(){
           <span class="bal num">Bal ${run[e.id]<0?"−":""}${money(Math.abs(run[e.id]))}</span></button>`;
       }
       html+=`</div></div>`;
+      if(list.length>shown.length){const left=list.length-shown.length;html+=`<button type="button" class="btn ghost more" id="showMore">Show ${Math.min(PAGE,left)} more (${left} older)</button>`}
     }
   } else if(ui.tab==="products") html+=productsView();
   else html+=reports(b);
@@ -606,7 +640,8 @@ function readDraftFields(){
   const a=parseFloat(g("amt").value);draft.amount=isNaN(a)?"":a;
   const r=g("rem").value;draft.remark=r===autoRemark()?"":r;
   draft.category=g("cat").value;draft.party=g("party").value.trim();
-  const t=new Date(g("dt").value).getTime();if(!isNaN(t))draft.ts=t;
+  // keep the exact time unless the user changed the date box (it only shows minutes)
+  if(g("dt").value!==toLocalInput(draft.ts)){const t=new Date(g("dt").value).getTime();if(!isNaN(t))draft.ts=t}
 }
 function saveEntry(){
   readDraftFields();const d=draft,isOut=d.type==="out";
@@ -706,7 +741,8 @@ document.addEventListener("click",async ev=>{
   if(t.id==="pDelNo"){$("#pDelBox").hidden=true;return}
   if(t.id==="pDelYes"){state.custom=state.custom.filter(c=>c.id!==prodEdit.id);closeSheet();commit();toast("Product deleted");return}
   if(t.dataset.tab){ui.tab=t.dataset.tab;return render()}
-  if(t.dataset.f){ui[t.dataset.f]=ui[t.dataset.f]===t.dataset.v?"all":t.dataset.v;return render()}
+  if(t.dataset.f){ui[t.dataset.f]=ui[t.dataset.f]===t.dataset.v?"all":t.dataset.v;ui.limit=PAGE;return render()}
+  if(t.id==="showMore"){ui.limit+=PAGE;return render()}
   if(t.dataset.entry)return openDetail(t.dataset.entry);
   if(t.id==="editEntry"){const e=book().entries.find(x=>x.id===t.dataset.id);return openEntry(e.type,e)}
   if(t.id==="exportCsv"){
@@ -742,7 +778,7 @@ document.addEventListener("click",async ev=>{
     if(t.id==="delYes"){const b=book();b.entries=b.entries.filter(x=>x.id!==draft.id);closeSheet();commit();toast("Entry deleted");return}
   }
   // books sheet
-  if(t.dataset.book){state.activeId=t.dataset.book;closeSheet();commit();return}
+  if(t.dataset.book){state.activeId=t.dataset.book;ui.limit=PAGE;closeSheet();commit();return}
   if(t.id==="bkAdd"){booksUi.adding=true;return openBooks()}
   if(t.id==="bkRename"){booksUi.renaming=state.activeId;return openBooks()}
   if(t.id==="bkCancel"){booksUi={adding:false,renaming:null,confirmDel:null};return openBooks()}
@@ -758,7 +794,7 @@ document.addEventListener("change",ev=>{if(ev.target.id==="bizName"){const n=ev.
 document.addEventListener("input",ev=>{
   const t=ev.target;
   if(t.id==="pmq"){pui.q=t.value;const pos=t.selectionStart;render();const q=$("#pmq");q.focus();try{q.setSelectionRange(pos,pos)}catch(e){}return}
-  if(t.id==="q"){ui.q=t.value;const pos=t.selectionStart;render();const q=$("#q");q.focus();try{q.setSelectionRange(pos,pos)}catch(e){}return}
+  if(t.id==="q"){ui.q=t.value;ui.limit=PAGE;const pos=t.selectionStart;render();const q=$("#q");q.focus();try{q.setSelectionRange(pos,pos)}catch(e){}return}
   if(!draft)return;
   if(t.id==="pq"){readDraftFields();draft.pq=t.value;const pos=t.selectionStart;drawEntry();const q=$("#pq");q.focus();try{q.setSelectionRange(pos,pos)}catch(e){}return}
   if(t.dataset.qty!==undefined||t.dataset.price!==undefined){
