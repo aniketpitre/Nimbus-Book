@@ -1,11 +1,16 @@
 name: Android release
 
-# Builds the Android APK. Push a tag like v1.0.1 to publish a GitHub Release with the APK attached,
-# or run it by hand from the Actions tab to get the APK as a downloadable artifact.
+# Builds the Android APK and publishes a GitHub Release with it attached.
+# Start it from the Actions tab ("Run workflow", enter a version like 1.0.1), or push a tag like v1.0.1.
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, e.g. 1.0.1 (leave empty to only build the APK)"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -41,11 +46,15 @@ jobs:
       - name: Name the APK
         id: apk
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          [ "$GITHUB_REF_TYPE" = "tag" ] || VERSION="dev-${GITHUB_SHA::7}"
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then VERSION="${GITHUB_REF_NAME#v}"
+          elif [ -n "$INPUT_VERSION" ]; then VERSION="${INPUT_VERSION#v}"
+          else VERSION="dev-${GITHUB_SHA::7}"; fi
           OUT="NimbusBook-${VERSION}.apk"
           cp android/app/build/outputs/apk/release/app-release.apk "$OUT"
           echo "file=$OUT" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
 
       - uses: actions/upload-artifact@v4
         with:
@@ -53,9 +62,13 @@ jobs:
           path: ${{ steps.apk.outputs.file }}
 
       - name: Publish GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.version != ''
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ steps.apk.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          name: Nimbus Book ${{ steps.apk.outputs.version }}
+          make_latest: true
           files: ${{ steps.apk.outputs.file }}
           body: |
             ## Install on Android

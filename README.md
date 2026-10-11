@@ -29,7 +29,7 @@ Data is saved in the app's local storage on the device. Uninstalling the app del
 ## Make a new release
 
 1. Bump `versionCode` (+1) and `versionName` in `android/app/build.gradle`.
-2. Commit, then tag and push: `git tag v1.0.1 && git push origin v1.0.1`.
+2. Commit and push, then on GitHub open **Actions → Android release → Run workflow** and enter the version (e.g. `1.0.1`). Pushing a tag `v1.0.1` works too.
 3. GitHub Actions builds `NimbusBook-1.0.1.apk` and attaches it to the release.
 
 ## Develop
